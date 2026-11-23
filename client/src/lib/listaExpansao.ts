@@ -54,7 +54,7 @@ export function acoesAbastecimentoLista(input: {
   return {
     podeEditar: !isEstornado,
     podeEstornar: isEstoque && !isEstornado,
-    podeExcluir: !isEstoque && !isEstornado,
+    podeExcluir: false,
   };
 }
 

@@ -76,10 +76,10 @@ describe("ações do abastecimento", () => {
     ).toEqual({ podeEditar: true, podeEstornar: true, podeExcluir: false });
   });
 
-  it("externo oferece exclusão definitiva", () => {
+  it("externo também preserva o histórico", () => {
     expect(
       acoesAbastecimentoLista({ abastecidoNaFazenda: false, fazendaId: null, status: "registrado" }),
-    ).toEqual({ podeEditar: true, podeEstornar: false, podeExcluir: true });
+    ).toEqual({ podeEditar: true, podeEstornar: false, podeExcluir: false });
   });
 
   it("estornado fica só consulta", () => {

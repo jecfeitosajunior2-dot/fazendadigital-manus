@@ -369,6 +369,17 @@ describe.sequential("manutenções no mysql descartável", () => {
     await expect(manutencoesOperacao.criar(sessao(2, "manutencoes.criar"), pedido(41, "chave-reenvio-01"))).rejects.toThrow(MSG_MANUT_CHAVE_DIVERGENTE);
   });
 
+  it("mesma chave com quantidade diferente não confirma outra manutenção", async () => {
+    await manutencoesOperacao.criar(sessao(2, "manutencoes.criar"), pedido(40, "chave-conteudo-01", {
+      pecas: [{ estoqueId: 70, nome: "Filtro", quantidade: 1, valorUnitario: 5 }],
+    }));
+    await expect(manutencoesOperacao.criar(sessao(2, "manutencoes.criar"), pedido(40, "chave-conteudo-01", {
+      pecas: [{ estoqueId: 70, nome: "Filtro", quantidade: 4, valorUnitario: 5 }],
+    }))).rejects.toThrow(MSG_MANUT_CHAVE_DIVERGENTE);
+    expect(await saldo()).toBe(9);
+    expect(await contar()).toBe(1);
+  });
+
   it("edição muda o texto e conserva o custo da peça", async () => {
     const gravado = await manutencoesOperacao.criar(sessao(2, "manutencoes.criar"), pedido(40, "chave-editar-0001", {
       pecas: [{ estoqueId: 70, nome: "Filtro", quantidade: 2, valorUnitario: 5 }],

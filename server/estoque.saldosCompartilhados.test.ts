@@ -53,9 +53,13 @@ describe("saldos compartilhados — travas e arquivo local", () => {
   it("abastecimento da fazenda não baixa combustível no arquivo", () => {
     const roteador = texto("routers.ts");
     const abastece = fatia(roteador, "const abastecimentosRouter", "const pecaInput");
-    expect(abastece).toContain("recusarEstoqueSemMysql()");
+    expect(abastece).toContain("abastecimentosOperacao");
     expect(abastece).not.toContain("syncSaidaAbastecimentoLocal");
     expect(abastece).not.toContain("estornarSaidaAbastecimentoLocal");
+    expect(abastece).not.toContain("localFallback");
+    const servico = texto("abastecimentosOperacao.ts");
+    expect(servico).toContain("MSG_ABAST_SEM_MYSQL");
+    expect(servico).not.toContain("syncSaidaAbastecimentoLocal");
     const espelho = texto("abastecimentoEstoqueSync.ts");
     expect(espelho).toContain('.for("update")');
     const local = fatia(espelho, "export async function syncSaidaAbastecimentoLocal", "export async function estornarSaidaAbastecimentoLocal");

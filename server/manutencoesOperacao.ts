@@ -323,17 +323,82 @@ async function prestadorDoTitular(
   return validado.prestadorPessoaId;
 }
 
-async function repetida(chave: string, maquinaId: number) {
-  const [row] = await bancoManutencoes
-    .select({ id: manutencoes.id, maquinaId: manutencoes.maquinaId })
-    .from(manutencoes)
-    .where(eq(manutencoes.chaveOperacao, chave))
-    .limit(1);
-  if (!row) return null;
-  if (Number(row.maquinaId) !== maquinaId) {
+function textoChave(valor: string | null | undefined) {
+  return (valor ?? "").trim();
+}
+
+function assinaturaPecas(pecas: { estoqueId: number | null; quantidade: string | number; origem?: string | null }[]) {
+  return pecas
+    .filter((peca) => peca.origem !== "oficina")
+    .map((peca) => `${Number(peca.estoqueId)}:${Number(peca.quantidade).toFixed(2)}`)
+    .sort()
+    .join("|");
+}
+
+function assinaturaOficina(pecas: { nome?: string | null; quantidade: string | number; valorUnitario?: string | number | null; origem?: string | null }[]) {
+  return pecas
+    .filter((peca) => peca.origem === "oficina")
+    .map((peca) => `${textoChave(peca.nome)}:${Number(peca.quantidade).toFixed(2)}:${Number(peca.valorUnitario ?? 0).toFixed(2)}`)
+    .sort()
+    .join("|");
+}
+
+async function pedidoConfere(tx: Tx, id: number, pedido: CriarManutencao) {
+  const cab = await linhas<{
+    data: string;
+    tipo: string;
+    descricao: string | null;
+    horimetro: string | null;
+    valorMaoObra: string | null;
+    tipoExecucao: string | null;
+  }>(tx, sql`SELECT data, tipo, descricao, horimetro, valorMaoObra, tipoExecucao
+             FROM manutencoes WHERE id = ${id} LIMIT 1`);
+  const os = cab[0];
+  if (!os) return false;
+  if (String(os.data).slice(0, 10) !== pedido.data.slice(0, 10)) return false;
+  if (textoChave(os.tipo) !== textoChave(pedido.tipo)) return false;
+  if (textoChave(os.descricao) !== textoChave(pedido.descricao)) return false;
+  if (textoChave(os.horimetro) !== textoChave(pedido.horimetro)) return false;
+  if (textoChave(os.tipoExecucao) !== textoChave(pedido.tipoExecucao)) return false;
+  if (Math.abs(Number(os.valorMaoObra ?? 0) - Number(pedido.valorMaoObra ?? 0)) > 0.001) return false;
+  const pecas = await linhas<{ estoqueId: number | null; quantidade: string; origem: string | null; nome: string; valorUnitario: string }>(
+    tx,
+    sql`SELECT estoqueId, quantidade, origem, nome, valorUnitario FROM manutencao_pecas WHERE manutencaoId = ${id}`,
+  );
+  const pedidas = pedido.pecas.map((peca) => ({
+    estoqueId: peca.estoqueId,
+    quantidade: peca.quantidade,
+    origem: "estoque" as const,
+  }));
+  if (assinaturaPecas(pecas) !== assinaturaPecas(pedidas)) return false;
+  const oficinaPedida = (pedido.pecasOficina ?? []).map((peca) => ({
+    nome: peca.nome,
+    quantidade: peca.quantidade,
+    valorUnitario: peca.valorUnitario,
+    origem: "oficina" as const,
+  }));
+  return assinaturaOficina(pecas) === assinaturaOficina(oficinaPedida);
+}
+
+async function resolverChave(
+  tx: Tx,
+  previa: { titular: number; principal: boolean; fazendas: number[] },
+  chave: string,
+  pedido: CriarManutencao,
+) {
+  const ja = await linhas<{ id: number; maquinaId: number; fazendaId: number | null }>(
+    tx,
+    sql`SELECT id, maquinaId, fazendaId FROM manutencoes
+        WHERE userId = ${previa.titular} AND chaveOperacao = ${chave}
+        LIMIT 1 FOR UPDATE`,
+  );
+  if (!ja[0]) return null;
+  if (Number(ja[0].maquinaId) !== pedido.maquinaId || !(await pedidoConfere(tx, Number(ja[0].id), pedido))) {
     throw new TRPCError({ code: "CONFLICT", message: MSG_MANUT_CHAVE_DIVERGENTE });
   }
-  return { success: true as const, id: row.id, repetida: true as const };
+  const fazendaId = ja[0].fazendaId == null ? null : Number(ja[0].fazendaId);
+  if (!visivel(previa, fazendaId)) recusar("sem_fazenda");
+  return { success: true as const, id: Number(ja[0].id), repetida: true as const };
 }
 
 async function gravar(tx: Tx, titular: number, fazendaId: number, pedido: CriarManutencao) {
@@ -459,18 +524,8 @@ export const manutencoesOperacao = {
         if (!(await indiceChave(tx))) semEstrutura();
         const sessaoCriar = { ...sessao, permissaoId: "manutencoes.criar" };
         const previa = await identificar(tx, sessaoCriar);
-        const ja = await linhas<{ id: number; maquinaId: number }>(
-          tx,
-          sql`SELECT id, maquinaId FROM manutencoes
-              WHERE userId = ${previa.titular} AND chaveOperacao = ${chave}
-              LIMIT 1 FOR UPDATE`,
-        );
-        if (ja[0]) {
-          if (Number(ja[0].maquinaId) !== pedido.maquinaId) {
-            throw new TRPCError({ code: "CONFLICT", message: MSG_MANUT_CHAVE_DIVERGENTE });
-          }
-          return { success: true as const, id: Number(ja[0].id), repetida: true as const };
-        }
+        const ja = await resolverChave(tx, previa, chave, pedido);
+        if (ja) return ja;
         const maquina = await travarMaquinaNoTx(tx, sessaoCriar, pedido.maquinaId);
         const fazendaId = maquina.fazendaId == null ? null : Number(maquina.fazendaId);
         if (fazendaId == null) {
@@ -492,9 +547,13 @@ export const manutencoesOperacao = {
       });
     } catch (erro) {
       if (!ehDuplicidade(erro)) throw erro;
-      const achada = await repetida(chave, pedido.maquinaId);
-      if (achada) return achada;
-      throw new TRPCError({ code: "CONFLICT", message: MSG_MANUT_CHAVE_DIVERGENTE });
+      return correr(async (tx) => {
+        await exigirFazendaColuna(tx);
+        const previa = await identificar(tx, { ...sessao, permissaoId: "manutencoes.criar" });
+        const achada = await resolverChave(tx, previa, chave, pedido);
+        if (achada) return achada;
+        throw new TRPCError({ code: "CONFLICT", message: MSG_MANUT_CHAVE_DIVERGENTE });
+      });
     }
   },
 

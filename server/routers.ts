@@ -132,6 +132,7 @@ import { MSG_COMPRA_EDITAR_INTEGRADA, MSG_COMPRA_LINHA_ISOLADA, isMysqlDuplicate
 import { isOperacaoTransferenciaInsumos } from "../shared/estoqueTransferencia";
 import { maquinasOperacao, MSG_MAQUINA_SEM_MYSQL, travarMaquinaNoTx, type PermissaoMaquina } from "./maquinasOperacao";
 import { manutencoesOperacao, type PermissaoManutencao } from "./manutencoesOperacao";
+import { abastecimentosOperacao, type PermissaoAbastecimento } from "./abastecimentosOperacao";
 import { importarPlanilhaMaquinas } from "./maquinasImportacao";
 import { compraInsumosService } from "./compraInsumosMysql";
 import { transferenciaInsumosService } from "./transferenciaInsumosMysql";
@@ -5820,33 +5821,31 @@ const abastecimentosBaseFields = {
   observacoes: z.string().optional(),
 };
 
+function sessaoAbastecimento(
+  user: { id: number; sessionVersion?: number | null },
+  permissaoId: PermissaoAbastecimento,
+) {
+  return {
+    executorId: user.id,
+    sessionVersionDaSessao: user.sessionVersion ?? null,
+    permissaoId,
+  };
+}
+
 const abastecimentosRouter = router({
   list: protectedProcedure
     .input(z.object({ maquinaId: z.number().optional() }).optional())
-    .query(async ({ ctx, input }) => {
-      try {
-        const conditions = [eq(abastecimentos.userId, ctx.user.id)];
-        if (input?.maquinaId) conditions.push(eq(abastecimentos.maquinaId, input.maquinaId));
-        return await db.select().from(abastecimentos).where(and(...conditions)).orderBy(desc(abastecimentos.data), desc(abastecimentos.createdAt));
-      } catch (error) {
-        if (!isDatabaseUnavailable(error)) throw error;
-        return listLocalAbastecimentos(ctx.user.id, { maquinaId: input?.maquinaId });
-      }
-    }),
+    .query(({ ctx, input }) =>
+      abastecimentosOperacao.listar(sessaoAbastecimento(ctx.user, "abastecimentos.visualizar"), {
+        maquinaId: input?.maquinaId,
+      }),
+    ),
 
   get: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ ctx, input }) => {
-      try {
-        const [row] = await db.select().from(abastecimentos).where(
-          and(eq(abastecimentos.id, input.id), eq(abastecimentos.userId, ctx.user.id))
-        );
-        return row ?? null;
-      } catch (error) {
-        if (!isDatabaseUnavailable(error)) throw error;
-        return getLocalAbastecimento(ctx.user.id, input.id);
-      }
-    }),
+    .query(({ ctx, input }) =>
+      abastecimentosOperacao.obter(sessaoAbastecimento(ctx.user, "abastecimentos.visualizar"), input.id),
+    ),
 
   create: protectedProcedure
     .input(z.object({
@@ -5862,352 +5861,84 @@ const abastecimentosRouter = router({
       fazendaId: z.number().int().positive().optional().nullable(),
       fornecedor: z.string().max(200).optional().nullable(),
       observacoes: z.string().optional(),
+      chaveOperacao: z.string().trim().min(8).max(80),
     }))
     .mutation(async ({ ctx, input }) => {
-      const dataISO = input.data.slice(0, 10);
       const qtd = parseFloat(input.litros.replace(",", "."));
       if (Number.isNaN(qtd) || qtd <= 0) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Informe uma quantidade abastecida válida." });
       }
-
       await assertMaquinaAtivaParaOperacao(ctx.user, input.maquinaId, "abastecimentos.criar");
-
       const total = input.valorTotal
-        ?? (input.valorLitro && input.litros
-          ? (qtd * parseFloat(input.valorLitro)).toFixed(2)
-          : undefined);
-
-      const interno = Boolean(input.abastecidoNaFazenda && input.fazendaId);
-
-      const rowPayload = {
-        userId: ctx.user.id,
+        ?? (input.valorLitro ? (qtd * parseFloat(input.valorLitro)).toFixed(2) : undefined);
+      return abastecimentosOperacao.criar(sessaoAbastecimento(ctx.user, "abastecimentos.criar"), {
         maquinaId: input.maquinaId,
-        data: dataISO,
+        data: input.data.slice(0, 10),
         combustivel: input.combustivel,
-        litros: String(qtd),
+        litros: qtd,
         valorLitro: input.valorLitro,
         valorTotal: total,
         horimetro: input.horimetro,
         responsavel: input.responsavel,
         abastecidoNaFazenda: Boolean(input.abastecidoNaFazenda),
         fazendaId: input.fazendaId ?? null,
-        fornecedor:
-          !interno && input.fornecedor?.trim() ? input.fornecedor.trim() : null,
-        status: "registrado" as const,
+        fornecedor: input.fornecedor,
         observacoes: input.observacoes,
-      };
-
-      try {
-        const insertId = await db.transaction(async tx => {
-          await travarMaquinaNoTx(tx, {
-            executorId: ctx.user.id,
-            sessionVersionDaSessao: ctx.user.sessionVersion ?? null,
-            permissaoId: "abastecimentos.criar",
-          }, input.maquinaId, { fazendaExtra: input.fazendaId ?? null });
-          const result = await tx.insert(abastecimentos).values(rowPayload);
-          const id = Number((result as any)[0]?.insertId ?? 0);
-          if (!id) {
-            throw new TRPCError({
-              code: "INTERNAL_SERVER_ERROR",
-              message: "Não foi possível registrar o abastecimento. Tente novamente.",
-            });
-          }
-
-          if (interno && input.fazendaId) {
-            await syncSaidaAbastecimento(
-              {
-                abastecimentoId: id,
-                maquinaId: input.maquinaId,
-                fazendaId: input.fazendaId,
-                combustivel: input.combustivel,
-                litros: qtd,
-                dataISO,
-                responsavel: input.responsavel,
-                valorTotal: total,
-                observacoes: input.observacoes,
-                userId: ctx.user.id,
-              },
-              tx,
-            );
-          }
-
-          return id;
-        });
-
-        return { success: true, id: insertId };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        recusarSeDeadlockEstoque(error);
-        if (!isDatabaseUnavailable(error)) {
-          console.error("[abastecimentos.create]", error);
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Não foi possível registrar o abastecimento. Verifique os dados e tente novamente.",
-          });
-        }
-        if (interno && input.fazendaId) recusarEstoqueSemMysql();
-        throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_MAQUINA_SEM_MYSQL });
-      }
+        chaveOperacao: input.chaveOperacao,
+        registradoPor: ctx.user.name?.trim() || `user-${ctx.user.id}`,
+      });
     }),
 
   update: protectedProcedure
     .input(z.object({ id: z.number(), ...abastecimentosBaseFields }))
     .mutation(async ({ ctx, input }) => {
-      const { id, data, valorLitro, litros, fazendaId, ...rest } = input;
-      const dataISO = data ? data.slice(0, 10) : undefined;
-
-      let anterior: Awaited<ReturnType<typeof getLocalAbastecimento>> | (typeof abastecimentos.$inferSelect) | null = null;
-      try {
-        const [row] = await db
-          .select()
-          .from(abastecimentos)
-          .where(and(eq(abastecimentos.id, id), eq(abastecimentos.userId, ctx.user.id)));
-        anterior = row ?? null;
-      } catch (error) {
-        if (!isDatabaseUnavailable(error)) throw error;
-        anterior = await getLocalAbastecimento(ctx.user.id, id);
+      const maquinaId = input.maquinaId;
+      if (maquinaId == null) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Informe a máquina do abastecimento." });
       }
-      if (!anterior) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Abastecimento não encontrado." });
-      }
-
-      if (String(anterior.status ?? "registrado") === "estornado") {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Abastecimento estornado não pode ser editado.",
-        });
-      }
-
-      const maquinaDestino = rest.maquinaId ?? anterior.maquinaId;
-      await assertMaquinaAtivaParaOperacao(ctx.user, maquinaDestino, "abastecimentos.editar", {
-        allowSameInactiveId: anterior.maquinaId,
+      await assertMaquinaAtivaParaOperacao(ctx.user, maquinaId, "abastecimentos.editar", {
+        allowSameInactiveId: maquinaId,
       });
-
-      const novosLitros = litros != null
-        ? parseFloat(String(litros).replace(",", "."))
-        : parseFloat(String(anterior.litros ?? 0));
-      const total = input.valorTotal
-        ?? (valorLitro && !Number.isNaN(novosLitros)
-          ? (novosLitros * parseFloat(valorLitro)).toFixed(2)
-          : undefined);
-
-      const eraInterno = Boolean(anterior.abastecidoNaFazenda && anterior.fazendaId);
-      const eAgora = Boolean(
-        (input.abastecidoNaFazenda ?? anterior.abastecidoNaFazenda) &&
-        (fazendaId !== undefined ? fazendaId : anterior.fazendaId),
+      const litros = input.litros != null ? parseFloat(String(input.litros).replace(",", ".")) : Number.NaN;
+      return abastecimentosOperacao.editar(
+        sessaoAbastecimento(ctx.user, "abastecimentos.editar"),
+        input.id,
+        {
+          maquinaId,
+          data: (input.data ?? "").slice(0, 10),
+          combustivel: input.combustivel ?? "diesel",
+          litros,
+          valorLitro: input.valorLitro,
+          valorTotal: input.valorTotal,
+          horimetro: input.horimetro,
+          responsavel: input.responsavel,
+          abastecidoNaFazenda: Boolean(input.abastecidoNaFazenda),
+          fazendaId: input.fazendaId ?? null,
+          fornecedor: input.fornecedor,
+          observacoes: input.observacoes,
+        },
       );
-      const novoFazendaId = (fazendaId !== undefined ? fazendaId : anterior.fazendaId) as number | null;
-      const novoCombustivel = (input.combustivel ?? anterior.combustivel) as string;
-      const novaData = dataISO ?? String(anterior.data).slice(0, 10);
-      const novoMaquinaId = input.maquinaId ?? anterior.maquinaId;
-      const novoResponsavel = input.responsavel !== undefined ? input.responsavel : anterior.responsavel;
-      const novasObs = input.observacoes !== undefined ? input.observacoes : anterior.observacoes;
-      const valorTotalFinal = total ?? (anterior.valorTotal != null ? String(anterior.valorTotal) : undefined);
-
-      try {
-        await db.transaction(async tx => {
-          await tx.update(abastecimentos).set({
-            ...rest,
-            ...(dataISO ? { data: dataISO } : {}),
-            ...(litros !== undefined ? { litros: String(novosLitros) } : {}),
-            ...(valorLitro !== undefined ? { valorLitro } : {}),
-            ...(total !== undefined ? { valorTotal: total } : {}),
-            ...(fazendaId !== undefined ? { fazendaId: fazendaId ?? null } : {}),
-          }).where(and(eq(abastecimentos.id, id), eq(abastecimentos.userId, ctx.user.id)));
-
-          if (eraInterno && !eAgora) {
-            await estornarSaidaAbastecimento(
-              id,
-              {
-                motivo: MOTIVO_ESTORNO_ORIGEM_COMBUSTIVEL_ALTERADA,
-                userId: ctx.user.id,
-                registradoPor: ctx.user.name?.trim() || undefined,
-              },
-              tx,
-            );
-          } else if (eAgora && novoFazendaId) {
-            await syncSaidaAbastecimento(
-              {
-                abastecimentoId: id,
-                maquinaId: novoMaquinaId,
-                fazendaId: novoFazendaId,
-                combustivel: novoCombustivel,
-                litros: novosLitros,
-                dataISO: novaData,
-                responsavel: novoResponsavel,
-                valorTotal: valorTotalFinal,
-                observacoes: novasObs,
-                userId: ctx.user.id,
-              },
-              tx,
-            );
-          }
-        });
-
-        return { success: true };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        recusarSeDeadlockEstoque(error);
-        if (!isDatabaseUnavailable(error)) {
-          console.error("[abastecimentos.update]", error);
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Não foi possível atualizar o abastecimento. Verifique os dados e tente novamente.",
-          });
-        }
-        if (eraInterno || eAgora) recusarEstoqueSemMysql();
-        await updateLocalAbastecimento(ctx.user.id, id, {
-          ...rest,
-          ...(dataISO ? { data: dataISO } : {}),
-          ...(litros !== undefined ? { litros: String(novosLitros) } : {}),
-          ...(valorLitro !== undefined ? { valorLitro } : {}),
-          ...(total !== undefined ? { valorTotal: total } : {}),
-          ...(fazendaId !== undefined ? { fazendaId: fazendaId ?? null } : {}),
-        });
-        return { success: true, localFallback: true };
-      }
     }),
 
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ ctx, input }) => {
-      let anterior: {
-        id: number;
-        abastecidoNaFazenda: boolean | null;
-        fazendaId: number | null;
-        status?: string | null;
-      } | null = null;
-
-      try {
-        const [row] = await db
-          .select()
-          .from(abastecimentos)
-          .where(and(eq(abastecimentos.id, input.id), eq(abastecimentos.userId, ctx.user.id)));
-        anterior = row ?? null;
-      } catch (error) {
-        if (!isDatabaseUnavailable(error)) throw error;
-        const local = await getLocalAbastecimento(ctx.user.id, input.id);
-        anterior = local
-          ? {
-              id: local.id,
-              abastecidoNaFazenda: local.abastecidoNaFazenda ?? null,
-              fazendaId: local.fazendaId ?? null,
-              status: local.status ?? null,
-            }
-          : null;
-      }
-
-      if (!anterior) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Abastecimento não encontrado." });
-      }
-
-      if (String(anterior.status ?? "registrado") === "estornado") {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Abastecimento estornado não pode ser excluído. O histórico é preservado.",
-        });
-      }
-
-      // Estoque da Fazenda: exclusão direta gera inconsistência — use estorno.
-      if (anterior.abastecidoNaFazenda && anterior.fazendaId) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message:
-            "Este abastecimento está vinculado ao estoque da Fazenda. Use Estornar abastecimento para devolver a quantidade e preservar o histórico.",
-        });
-      }
-
-      try {
-        await db
-          .delete(abastecimentos)
-          .where(and(eq(abastecimentos.id, input.id), eq(abastecimentos.userId, ctx.user.id)));
-        return { success: true };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        if (!isDatabaseUnavailable(error)) {
-          console.error("[abastecimentos.delete]", error);
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Não foi possível excluir o abastecimento. Tente novamente.",
-          });
-        }
-        await deleteLocalAbastecimento(ctx.user.id, input.id);
-        return { success: true };
-      }
-    }),
+    .mutation(({ ctx, input }) =>
+      abastecimentosOperacao.excluir(sessaoAbastecimento(ctx.user, "abastecimentos.inativar"), input.id),
+    ),
 
   estornar: protectedProcedure
-    .input(
-      z.object({
-        id: z.number(),
-        motivo: z.string().trim().min(1).max(255).optional(),
-      }),
-    )
-    .mutation(async ({ ctx, input }) => {
-      let anterior: Awaited<ReturnType<typeof getLocalAbastecimento>> | (typeof abastecimentos.$inferSelect) | null =
-        null;
-      try {
-        const [row] = await db
-          .select()
-          .from(abastecimentos)
-          .where(and(eq(abastecimentos.id, input.id), eq(abastecimentos.userId, ctx.user.id)));
-        anterior = row ?? null;
-      } catch (error) {
-        if (!isDatabaseUnavailable(error)) throw error;
-        anterior = await getLocalAbastecimento(ctx.user.id, input.id);
-      }
-
-      if (!anterior) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Abastecimento não encontrado." });
-      }
-
-      if (String(anterior.status ?? "registrado") === "estornado") {
-        return { success: true, alreadyEstornado: true };
-      }
-
-      if (!anterior.abastecidoNaFazenda || !anterior.fazendaId) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message:
-            "Estorno aplica-se apenas a abastecimentos com origem Estoque da Fazenda. Para compra externa, use Excluir.",
-        });
-      }
-
-      const motivoExtra = input.motivo?.trim();
-      const motivo = motivoExtra
-        ? `${MOTIVO_ESTORNO_ABASTECIMENTO} — ${motivoExtra}`
-        : MOTIVO_ESTORNO_ABASTECIMENTO;
-
-      try {
-        await db.transaction(async tx => {
-          await estornarSaidaAbastecimento(
-            input.id,
-            {
-              motivo,
-              userId: ctx.user.id,
-              registradoPor: ctx.user.name?.trim() || undefined,
-            },
-            tx,
-          );
-          await tx
-            .update(abastecimentos)
-            .set({ status: "estornado" })
-            .where(and(eq(abastecimentos.id, input.id), eq(abastecimentos.userId, ctx.user.id)));
-        });
-        return { success: true };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        recusarSeDeadlockEstoque(error);
-        if (!isDatabaseUnavailable(error)) {
-          console.error("[abastecimentos.estornar]", error);
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Não foi possível estornar o abastecimento. Tente novamente.",
-          });
-        }
-        recusarEstoqueSemMysql();
-      }
-    }),
+    .input(z.object({
+      id: z.number(),
+      motivo: z.string().trim().min(1).max(255).optional(),
+    }))
+    .mutation(({ ctx, input }) =>
+      abastecimentosOperacao.estornar(
+        sessaoAbastecimento(ctx.user, "abastecimentos.estornar"),
+        input.id,
+        (input.motivo ?? "").trim() || MOTIVO_ESTORNO_ABASTECIMENTO,
+        ctx.user.name?.trim() || `user-${ctx.user.id}`,
+      ),
+    ),
 });
 
 // ─── MANUTENCOES ROUTER ───────────────────────────────────────────────────────

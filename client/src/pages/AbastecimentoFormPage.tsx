@@ -193,6 +193,7 @@ const ABASTECIMENTO_DRAFT_KEY = "fd:abastecimento-form-draft";
 type AbastecimentoDraft = {
   form: FormState;
   initializedForId: number | null;
+  chaveOperacao?: string;
 };
 
 const btnAcaoBaseCls =
@@ -239,6 +240,9 @@ export default function AbastecimentoFormPage() {
   };
   const initializedForId = useRef<number | null>(null);
   const draftRestoredRef = useRef(false);
+  const chaveOperacaoRef = useRef(
+    typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `abast-${Date.now()}`,
+  );
 
   const [form, setForm] = useState<FormState>(emptyForm);
   const [erros, setErros] = useState<Partial<Record<CampoObrigatorioAbastecimento, string>>>({});
@@ -341,6 +345,7 @@ export default function AbastecimentoFormPage() {
         const draft = JSON.parse(raw) as AbastecimentoDraft;
         setForm(draft.form);
         initializedForId.current = draft.initializedForId;
+        if (draft.chaveOperacao) chaveOperacaoRef.current = draft.chaveOperacao;
         draftRestoredRef.current = true;
       } catch {
         /* rascunho inválido */
@@ -624,6 +629,7 @@ export default function AbastecimentoFormPage() {
     const draft: AbastecimentoDraft = {
       form,
       initializedForId: initializedForId.current,
+      chaveOperacao: chaveOperacaoRef.current,
     };
     sessionStorage.setItem(ABASTECIMENTO_DRAFT_KEY, JSON.stringify(draft));
   };
@@ -849,17 +855,19 @@ export default function AbastecimentoFormPage() {
       litros: form.litros.replace(",", "."),
       horimetro: medidorTipo && form.horimetro.trim() ? form.horimetro.trim() : undefined,
       abastecidoNaFazenda: origemEstoque,
-      fazendaId: origemEstoque && fazendaEstoqueId ? Number(fazendaEstoqueId) : null,
       valorLitro: valorLitroFinal,
       valorTotal: valorTotalFinal,
       responsavel: form.responsavel.trim() || undefined,
       observacoes: form.observacoes.trim() || undefined,
       fornecedor:
         !origemEstoque && nomeFornecedorSelecionado ? nomeFornecedorSelecionado : null,
+      fazendaId: isEdit
+        ? (form.fazendaId ? Number(form.fazendaId) : null)
+        : (form.fazendaMaquinaId ? Number(form.fazendaMaquinaId) : null),
     };
 
     if (isEdit) updateMutation.mutate({ id: editId, ...payload });
-    else createMutation.mutate(payload);
+    else createMutation.mutate({ ...payload, chaveOperacao: chaveOperacaoRef.current });
   };
 
   const medidorLabel =
