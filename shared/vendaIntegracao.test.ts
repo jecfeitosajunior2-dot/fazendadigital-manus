@@ -16,18 +16,17 @@ import {
 
 const raiz = dirname(fileURLToPath(import.meta.url));
 
-describe("vendaIntegracao — seleção das rotas sem ligar a flag", () => {
-  it("a constante de produção permanece false e não lê env", () => {
-    expect(INTEGRACAO_CONFIRMACAO_VENDA_ATIVA).toBe(false);
-    expect(ESTADO_CONFIRMACAO_VENDA_PRODUCAO).toBe("comercial");
-    expect(estadoConfirmacaoVenda()).toBe("comercial");
-    expect(integracaoConfirmacaoVendaAtiva()).toBe(false);
-    expect(configuracaoConfirmacaoVenda()).toEqual({ estado: "comercial", integracaoAtiva: false });
+describe("vendaIntegracao — seleção das rotas de confirmação", () => {
+  it("a constante de produção está integrada e não lê env", () => {
+    expect(INTEGRACAO_CONFIRMACAO_VENDA_ATIVA).toBe(true);
+    expect(ESTADO_CONFIRMACAO_VENDA_PRODUCAO).toBe("integrado");
+    expect(estadoConfirmacaoVenda()).toBe("integrado");
+    expect(integracaoConfirmacaoVendaAtiva()).toBe(true);
+    expect(configuracaoConfirmacaoVenda()).toEqual({ estado: "integrado", integracaoAtiva: true });
     const fonte = readFileSync(join(raiz, "vendaIntegracao.ts"), "utf8");
-    expect(fonte).toContain("INTEGRACAO_CONFIRMACAO_VENDA_ATIVA = false");
-    expect(fonte).toContain('ESTADO_CONFIRMACAO_VENDA_PRODUCAO = "comercial"');
+    expect(fonte).toContain("INTEGRACAO_CONFIRMACAO_VENDA_ATIVA = true");
+    expect(fonte).toContain('ESTADO_CONFIRMACAO_VENDA_PRODUCAO = "integrado"');
     expect(fonte).not.toContain("process.env");
-    expect(fonte).not.toContain("INTEGRACAO_CONFIRMACAO_VENDA_ATIVA = true");
   });
 
   it("A — flag false autoriza só a comercial", () => {
@@ -64,8 +63,8 @@ describe("vendaIntegracao — seleção das rotas sem ligar a flag", () => {
   it("injeção não altera a constante compartilhada", () => {
     expect(autorizarRotaConfirmacaoVenda("integrada", { integracaoAtiva: true }).ok).toBe(true);
     expect(autorizarRotaConfirmacaoVenda("comercial", { estado: "manutencao" }).ok).toBe(false);
-    expect(INTEGRACAO_CONFIRMACAO_VENDA_ATIVA).toBe(false);
-    expect(estadoConfirmacaoVenda()).toBe("comercial");
-    expect(integracaoConfirmacaoVendaAtiva()).toBe(false);
+    expect(INTEGRACAO_CONFIRMACAO_VENDA_ATIVA).toBe(true);
+    expect(estadoConfirmacaoVenda()).toBe("integrado");
+    expect(integracaoConfirmacaoVendaAtiva()).toBe(true);
   });
 });

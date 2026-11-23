@@ -1,7 +1,7 @@
 /**
- * Fonte única do estado de confirmação de vendas e da flag integrada.
- * Produção permanece COMERCIAL. Integração desligada. Sem env.
- * Testes injetam comercial | integrado | manutencao.
+ * Fonte única do estado de confirmação de vendas.
+ * Produção está em integrado. A tela usa a confirmação com o Financeiro.
+ * A constante não lê variável de ambiente. Testes injetam comercial, integrado ou manutencao.
  */
 export const ESTADO_CONFIRMACAO_VENDA_PRODUCAO = "integrado" as const;
 

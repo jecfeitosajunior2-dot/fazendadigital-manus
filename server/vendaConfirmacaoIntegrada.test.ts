@@ -62,11 +62,11 @@ describe("vendaConfirmacaoIntegrada — segurança das rotas 3E.9H", () => {
     comercial.confirmar.mockResolvedValue({ vendaId: 91 });
   });
 
-  it("permanece desligada na constante de produção", () => {
-    expect(INTEGRACAO_CONFIRMACAO_VENDA_ATIVA).toBe(false);
-    expect(ESTADO_CONFIRMACAO_VENDA_PRODUCAO).toBe("comercial");
-    expect(estadoConfirmacaoVenda()).toBe("comercial");
-    expect(integracaoConfirmacaoVendaAtiva()).toBe(false);
+  it("produção permanece integrada", () => {
+    expect(INTEGRACAO_CONFIRMACAO_VENDA_ATIVA).toBe(true);
+    expect(ESTADO_CONFIRMACAO_VENDA_PRODUCAO).toBe("integrado");
+    expect(estadoConfirmacaoVenda()).toBe("integrado");
+    expect(integracaoConfirmacaoVendaAtiva()).toBe(true);
   });
 
   it("A — flag false + rota comercial", async () => {
@@ -93,7 +93,7 @@ describe("vendaConfirmacaoIntegrada — segurança das rotas 3E.9H", () => {
     await expect(confirmarVendaIntegradaSeAtiva(store, 10, inputIntegrada, { integracaoAtiva: true }))
       .rejects.toBeTruthy();
     expect(transacoes()).toBeGreaterThan(0);
-    expect(INTEGRACAO_CONFIRMACAO_VENDA_ATIVA).toBe(false);
+    expect(INTEGRACAO_CONFIRMACAO_VENDA_ATIVA).toBe(true);
   });
 
   it("C — manutenção recusa as duas rotas e não abre transação", async () => {
@@ -104,17 +104,17 @@ describe("vendaConfirmacaoIntegrada — segurança das rotas 3E.9H", () => {
       .rejects.toMatchObject({ message: MSG_VENDA_CONFIRMACAO_MANUTENCAO, code: "FORBIDDEN" });
     expect(transacoes()).toBe(0);
     expect(comercial.confirmar).not.toHaveBeenCalled();
-    expect(INTEGRACAO_CONFIRMACAO_VENDA_ATIVA).toBe(false);
-    expect(estadoConfirmacaoVenda()).toBe("comercial");
+    expect(INTEGRACAO_CONFIRMACAO_VENDA_ATIVA).toBe(true);
+    expect(estadoConfirmacaoVenda()).toBe("integrado");
   });
 
-  it("O — rota bloqueada não inicia transação nem grava comercial", async () => {
+  it("O — produção integrada entra na transação e a comercial continua bloqueada", async () => {
     const { store, transacoes } = storeContador();
     await expect(confirmarVendaIntegradaSeAtiva(store, 10, inputIntegrada))
-      .rejects.toMatchObject({ message: MSG_VENDA_CONFIRMACAO_INTEGRADA_DESLIGADA });
-    await expect(confirmarVendaComercialSePermitida(10, inputComercial, { integracaoAtiva: true }))
+      .rejects.not.toMatchObject({ message: MSG_VENDA_CONFIRMACAO_INTEGRADA_DESLIGADA });
+    await expect(confirmarVendaComercialSePermitida(10, inputComercial))
       .rejects.toMatchObject({ message: MSG_VENDA_CONFIRMACAO_COMERCIAL_BLOQUEADA });
-    expect(transacoes()).toBe(0);
+    expect(transacoes()).toBeGreaterThan(0);
     expect(comercial.confirmar).not.toHaveBeenCalled();
   });
 

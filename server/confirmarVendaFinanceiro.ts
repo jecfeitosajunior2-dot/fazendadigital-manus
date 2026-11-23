@@ -1,6 +1,6 @@
 /**
- * Confirmação comercial de venda + título V2 na mesma transação.
- * Serviço isolado: nenhuma rota ativa deve chamar este módulo nesta fase.
+ * Confirmação da venda com o título do Financeiro V2 na mesma transação.
+ * A rota vendas.confirmarIntegrada chama este serviço.
  */
 import { TRPCError } from "@trpc/server";
 import { isMysqlDuplicateKey } from "../shared/compraInsumos";
@@ -578,7 +578,7 @@ export function createConfirmarVendaFinanceiroService(store: ConfirmarVendaFinan
   };
 }
 
-/** Mesmo padrão da compra de insumos. Não abre transação própria. Sem rota nesta fase. */
+/** Mesmo padrão da compra de insumos. Não abre transação própria. Entra na transação da confirmação. */
 export function anexarNucleoFinanceiroNaVenda(
   drizzleTx: FinanceiroDrizzleTx,
   comercial: Omit<ConfirmarVendaFinanceiroTx, "fin">,

@@ -8,7 +8,7 @@ import {
   validarChaveIdempotenciaVenda,
   type IntencaoConfirmacaoVendaFinanceiro,
 } from "@shared/vendaFinanceiro";
-/** Fonte: shared/vendaIntegracao. Produção: INTEGRACAO_CONFIRMACAO_VENDA_ATIVA = false */
+/** Fonte: shared/vendaIntegracao. Produção: INTEGRACAO_CONFIRMACAO_VENDA_ATIVA = true */
 export { INTEGRACAO_CONFIRMACAO_VENDA_ATIVA } from "@shared/vendaIntegracao";
 
 export const PREFIXO_PENDENCIA_VENDA_V1 = "fd.finv2.venpend.v1";

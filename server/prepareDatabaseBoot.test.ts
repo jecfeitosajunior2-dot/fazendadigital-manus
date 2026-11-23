@@ -96,8 +96,8 @@ describe("prepareDatabaseForBoot — gate de inicialização", () => {
     expect(verify).not.toMatch(/SKIP_|IGNORE_SCHEMA|BYPASS/);
   });
 
-  it("H — integração financeira permanece OFF", () => {
-    expect(INTEGRACAO_CONFIRMACAO_VENDA_ATIVA).toBe(false);
+  it("H — integração financeira da venda está ligada", () => {
+    expect(INTEGRACAO_CONFIRMACAO_VENDA_ATIVA).toBe(true);
   });
 
   it("isDatabaseUrlConfigured não trata string vazia como MySQL configurado", () => {

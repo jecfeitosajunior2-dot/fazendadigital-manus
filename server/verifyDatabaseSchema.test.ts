@@ -203,8 +203,8 @@ describe("verifyDatabaseSchema — somente leitura", () => {
     expect(req.columns.length).toBeGreaterThan(100);
   });
 
-  it("H — integração financeira permanece OFF", () => {
-    expect(INTEGRACAO_CONFIRMACAO_VENDA_ATIVA).toBe(false);
+  it("H — integração financeira da venda está ligada", () => {
+    expect(INTEGRACAO_CONFIRMACAO_VENDA_ATIVA).toBe(true);
   });
 
   it("G — verifyDatabaseSchema não chama ensureSchema", () => {

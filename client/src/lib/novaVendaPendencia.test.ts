@@ -251,7 +251,7 @@ describe("Nova Venda — pendência de confirmação", async () => {
   it("prepara Verificar confirmação sem ativar a rota integrada", async () => {
     const storage = criarArmazenamentoPendenciaVendaMemoria();
     const tentativa = await gravar(10, storage, {}, "desconhecido");
-    expect(INTEGRACAO_CONFIRMACAO_VENDA_ATIVA).toBe(false);
+    expect(INTEGRACAO_CONFIRMACAO_VENDA_ATIVA).toBe(true);
     const verificacao = prepararVerificacaoConfirmacaoVenda({ tentativa });
     expect(verificacao.ok).toBe(false);
     expect(verificacao.motivo).toBe("integracao_desligada");
@@ -564,7 +564,7 @@ describe("Nova Venda — segurança da recuperação 3E.8C", async () => {
 
   it("O — nenhuma chamada à rota integrada", async () => {
     const lib = readFileSync(resolve(here, "./novaVendaPendencia.ts"), "utf8");
-    expect(INTEGRACAO_CONFIRMACAO_VENDA_ATIVA).toBe(false);
+    expect(INTEGRACAO_CONFIRMACAO_VENDA_ATIVA).toBe(true);
     expect(lib).not.toContain("confirmarVendaFinanceiro");
     expect(lib).not.toContain("trpc.vendas.confirmar");
     expect(lib).not.toContain("vendas.cancelar");
@@ -806,7 +806,7 @@ describe("Nova Venda — Web Locks 3E.8I", () => {
 
   it("O — nenhuma chamada à rota integrada e Web Locks sem void", async () => {
     const lib = readFileSync(resolve(here, "./novaVendaPendencia.ts"), "utf8");
-    expect(INTEGRACAO_CONFIRMACAO_VENDA_ATIVA).toBe(false);
+    expect(INTEGRACAO_CONFIRMACAO_VENDA_ATIVA).toBe(true);
     expect(lib).not.toContain("void webLocks");
     expect(lib).not.toContain("confirmarVendaFinanceiro");
     expect(page).toContain("await normalizarPendenciaVendaAposRecarregar");

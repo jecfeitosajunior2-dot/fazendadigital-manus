@@ -1,7 +1,7 @@
 /**
  * Porta das rotas de confirmação. O estado do servidor decide o caminho
  * antes de qualquer transação: comercial, integrado ou manutenção.
- * Produção permanece comercial. Nada aqui liga a integração.
+ * Produção está integrada. Nesse estado a rota comercial fica recusada.
  */
 import { TRPCError } from "@trpc/server";
 import {

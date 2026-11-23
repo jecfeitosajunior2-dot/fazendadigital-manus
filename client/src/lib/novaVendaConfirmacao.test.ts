@@ -58,7 +58,7 @@ function rascunhoVista(): RascunhoCondicaoNovaVenda {
 
 describe("Nova Venda — confirmação 3E.9C", () => {
   it("A — flag false usa só o fluxo comercial, sem ven- e sem condição", async () => {
-    expect(INTEGRACAO_CONFIRMACAO_VENDA_ATIVA).toBe(false);
+    expect(INTEGRACAO_CONFIRMACAO_VENDA_ATIVA).toBe(true);
     expect(decidirFluxoConfirmacaoNovaVenda(false)).toBe("comercial");
     const storage = criarArmazenamentoPendenciaVendaMemoria();
     let integrada = 0;
@@ -515,7 +515,7 @@ describe("Nova Venda — confirmação 3E.9C", () => {
   });
 
   it("página pergunta a flag ao servidor e não ativa sozinha", () => {
-    expect(INTEGRACAO_CONFIRMACAO_VENDA_ATIVA).toBe(false);
+    expect(INTEGRACAO_CONFIRMACAO_VENDA_ATIVA).toBe(true);
     expect(page).toContain("trpc.vendas.integracaoConfirmacaoAtiva");
     expect(page).toContain("trpc.vendas.estadoConfirmacaoVenda");
     expect(page).toContain("estadoConsultaFlagConfirmacaoVenda");
