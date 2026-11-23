@@ -3,13 +3,13 @@
   "geradoEm": "2026-11-23",
   "total": 252,
   "contagem": {
-    "HOMOLOGADA": 215,
+    "HOMOLOGADA": 217,
     "PARCIAL": 0,
-    "LEGADA": 10,
+    "LEGADA": 8,
     "BLOQUEADA": 23,
     "NAO_APLICAVEL": 4
   },
-  "percentualHomologacaoTecnica": 85.32,
+  "percentualHomologacaoTecnica": 86.11,
   "projecaoAnterior": {
     "total": 252,
     "HOMOLOGADA": 98,
@@ -85,9 +85,9 @@
       "total": 1
     },
     "rebanhoOverview": {
-      "HOMOLOGADA": 0,
+      "HOMOLOGADA": 1,
       "PARCIAL": 0,
-      "LEGADA": 1,
+      "LEGADA": 0,
       "BLOQUEADA": 0,
       "NAO_APLICAVEL": 0,
       "total": 1
@@ -253,9 +253,9 @@
       "total": 5
     },
     "manejo": {
-      "HOMOLOGADA": 0,
+      "HOMOLOGADA": 1,
       "PARCIAL": 0,
-      "LEGADA": 1,
+      "LEGADA": 0,
       "BLOQUEADA": 0,
       "NAO_APLICAVEL": 0,
       "total": 1
@@ -1355,15 +1355,16 @@
       "modulo": "rebanhoOverview",
       "nome": "rebanhoOverview.overview",
       "tipoOperacao": "consulta",
-      "servico": "visão do rebanho com arquivo local",
-      "permissao": "rebanhoOverview.visualizar",
+      "servico": "MySQL; titular e fazendas concedidas antes da soma",
+      "permissao": "animais.visualizar",
       "titularidade": "titular da conta; o funcionário é só o executor",
       "fazenda": "fazenda concedida; histórico antigo não muda de fazenda",
-      "classificacao": "LEGADA",
-      "fase": "código atual conferido na H4-BS",
-      "evidencia": "o código devolve localFallback ou o arquivo quando o banco cai",
-      "dependencia": "nenhuma migração nova; o caminho do arquivo continua ativo",
-      "risco": "o cliente ainda pode receber sucesso pelo arquivo local quando o banco não responde"
+      "classificacao": "HOMOLOGADA",
+      "fase": "H4-BT",
+      "evidencia": "server/manejoRebanho.homologacao.test.ts confere o filtro e a ausencia do arquivo",
+      "dependencia": "nenhuma migracao; nao ha permissao propria de rebanho no catalogo",
+      "risco": "a soma ainda nao rodou no MySQL descartavel nesta fase. Formulas antigas foram mantidas. Modulo amarelo.",
+      "classificacaoAnterior": "LEGADA"
     },
     {
       "id": "R074",
@@ -3859,15 +3860,16 @@
       "modulo": "manejo",
       "nome": "manejo.registrarPontualBrinco",
       "tipoOperacao": "gravacao",
-      "servico": "arquivo local quando o banco cai",
-      "permissao": "manejo.editar",
+      "servico": "MySQL; manejo no titular e o arquivo nao grava",
+      "permissao": "manejo.criar",
       "titularidade": "titular da conta; o funcionário é só o executor",
       "fazenda": "fazenda concedida; histórico antigo não muda de fazenda",
-      "classificacao": "LEGADA",
-      "fase": "código atual conferido na H4-BS",
-      "evidencia": "o código devolve localFallback ou o arquivo quando o banco cai",
-      "dependencia": "nenhuma migração nova; o caminho do arquivo continua ativo",
-      "risco": "o cliente ainda pode receber sucesso pelo arquivo local quando o banco não responde"
+      "classificacao": "HOMOLOGADA",
+      "fase": "H4-BT",
+      "evidencia": "server/manejoRebanho.homologacao.test.ts confere permissao, titular e indice do brinco",
+      "dependencia": "proposta 0071 nao aplicada: sem o indice a troca de brinco recusa e nao grava",
+      "risco": "a troca de brinco ativo so funciona depois da 0071 no operacional. RFID sem troca de brinco nao depende do indice. Modulo amarelo.",
+      "classificacaoAnterior": "LEGADA"
     },
     {
       "id": "R240",

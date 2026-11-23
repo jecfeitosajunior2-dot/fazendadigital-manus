@@ -211,7 +211,7 @@ import {
   resolverVinculosImportacao,
   type CatalogoImportacaoAnimal,
 } from "./importacaoAnimalAutorizada";
-import { cadastrarEEspelhar, erroCadastroAnimal } from "./cadastroAnimalAutorizado";
+import { autorizarOperacaoPersistida, cadastrarEEspelhar, erroCadastroAnimal } from "./cadastroAnimalAutorizado";
 import { ioCadastroDrizzle } from "./cadastroAnimalDb";
 import { cadastrarEEspelharLote, erroCadastroLote } from "./cadastroLoteAutorizado";
 import { ioCadastroLoteDrizzle } from "./cadastroLoteDb";
@@ -10857,10 +10857,31 @@ const manejoRouter = router({
         });
       }
 
-      await assertFazendaDoUsuario(ctx.user.id, input.fazendaId);
-      await assertLoteNaFazenda(ctx.user.id, input.fazendaId, input.loteId ?? null);
-      const animal = await assertAnimalNaFazenda(ctx.user.id, input.animalId, input.fazendaId);
-      await assertManejoPermitidoNaData(ctx.user.id, input.animalId, dataISO);
+      const contextoManejo = await db.transaction(async (tx) => {
+        const deciso = await autorizarOperacaoPersistida(consultaEstoqueNaTransacao(tx), {
+          executorId: ctx.user.id,
+          sessionVersionDaSessao: ctx.user.sessionVersion ?? null,
+          permissaoId: "manejo.criar",
+          fazendaId: input.fazendaId,
+        });
+        if (!deciso.ok) {
+          if (deciso.motivo === "sem_identidade") {
+            throw new TRPCError({ code: "UNAUTHORIZED", message: "Sessão inválida." });
+          }
+          if (deciso.motivo === "sem_permissao" || deciso.motivo === "reservado_ao_principal" || deciso.motivo === "permissao_invalida") {
+            throw new TRPCError({ code: "FORBIDDEN", message: "Sem permissão para registrar o manejo." });
+          }
+          if (deciso.motivo === "sem_fazenda") {
+            throw new TRPCError({ code: "FORBIDDEN", message: "Você não tem acesso a esta Fazenda." });
+          }
+          throw new TRPCError({ code: "NOT_FOUND", message: "Animal não encontrado." });
+        }
+        return deciso.contexto;
+      });
+      const titularId = contextoManejo.titularUserId;
+      await assertLoteNaFazenda(titularId, input.fazendaId, input.loteId ?? null);
+      const animal = await assertAnimalNaFazenda(titularId, input.animalId, input.fazendaId);
+      await assertManejoPermitidoNaData(titularId, input.animalId, dataISO);
 
       const brincoAtual = (animal.brinco ?? "").trim() || null;
       const rfidAtual = (animal.brincoEletronico ?? "").trim() || null;
@@ -10913,11 +10934,11 @@ const manejoRouter = router({
       const assertBrincoOuMensagemAmigavel = async (useLocal: boolean) => {
         if (!alteraBrinco || !novoBrinco) return;
         await assertBrincoUnicoEntreAtivos(
-          ctx.user.id,
+          titularId,
           novoBrinco,
           animal.status ?? "ativo",
           input.animalId,
-          useLocal,
+          false,
           input.fazendaId,
         );
       };
@@ -10925,10 +10946,10 @@ const manejoRouter = router({
       const assertRfidOuMensagem = async (useLocal: boolean) => {
         if (!alteraRfid || !novoRfid) return;
         await assertRfidNaoReutilizavel(
-          ctx.user.id,
+          titularId,
           novoRfid,
           input.animalId,
-          useLocal,
+          false,
         );
       };
 
@@ -10940,7 +10961,7 @@ const manejoRouter = router({
         if (!brincoNovoHist) brincoNovoHist = "—";
 
         return {
-          userId: ctx.user.id,
+          userId: titularId,
           animalId: input.animalId,
           brincoAnterior: brincoAtual ? brincoAtual.slice(0, 50) : null,
           brincoNovo: brincoNovoHist.slice(0, 50),
@@ -10961,32 +10982,7 @@ const manejoRouter = router({
         };
       };
 
-      const runLocal = async () => {
-        // Valida os dois antes de gravar (atomicidade: tudo ou nada).
-        await assertBrincoOuMensagemAmigavel(true);
-        await assertRfidOuMensagem(true);
-
-        const setData: Record<string, unknown> = {};
-        if (alteraBrinco) setData.brinco = novoBrinco;
-        if (alteraRfid) setData.brincoEletronico = novoRfid;
-
-        const historicoRow = montarHistoricoRow();
-
-        await updateLocalAnimal(ctx.user.id, input.animalId, setData);
-        try {
-          await createLocalHistoricoBrinco(ctx.user.id, historicoRow);
-        } catch (histErr) {
-          await updateLocalAnimal(ctx.user.id, input.animalId, {
-            brinco: brincoAtual,
-            brincoEletronico: rfidAtual,
-          });
-          throw histErr;
-        }
-        return { success: true as const, localFallback: true as const };
-      };
-
       try {
-        // Valida brinco + RFID antes de qualquer gravação (operação conjunta atômica).
         await assertBrincoOuMensagemAmigavel(false);
         await assertRfidOuMensagem(false);
 
@@ -10997,19 +10993,23 @@ const manejoRouter = router({
         const historicoRow = montarHistoricoRow();
 
         await db.transaction(async tx => {
+          if (alteraBrinco) {
+            const indice = await tx.execute(sql`SHOW INDEX FROM animais WHERE Key_name = 'animais_brinco_ativo_fazenda_uq'`);
+            const pacote = indice as unknown as [unknown[], unknown];
+            const linhas = Array.isArray(pacote?.[0]) ? pacote[0] : [];
+            if (linhas.length === 0) {
+              throw new TRPCError({
+                code: "PRECONDITION_FAILED",
+                message: "O banco ainda não garante o brinco único nesta fazenda. Nada foi alterado.",
+              });
+            }
+          }
           await tx
             .update(animais)
             .set(setData)
-            .where(and(eq(animais.id, input.animalId), eq(animais.userId, ctx.user.id)));
+            .where(and(eq(animais.id, input.animalId), eq(animais.userId, titularId), eq(animais.fazendaId, input.fazendaId)));
           await tx.insert(historicoBrincos).values(historicoRow);
         });
-
-        try {
-          await updateLocalAnimal(ctx.user.id, input.animalId, setData);
-          await createLocalHistoricoBrinco(ctx.user.id, historicoRow);
-        } catch (mirrorError) {
-          console.warn("[manejo.registrarPontualBrinco] Espelho local:", mirrorError);
-        }
 
         return {
           success: true as const,
@@ -11020,8 +11020,12 @@ const manejoRouter = router({
         };
       } catch (err) {
         if (err instanceof TRPCError) throw err;
-        if (isDatabaseUnavailable(err)) {
-          return runLocal();
+        const texto = err instanceof Error ? `${err.message} ${String((err as { code?: string }).code ?? "")}` : String(err);
+        if (/ECONNREFUSED|PROTOCOL_CONNECTION_LOST|ETIMEDOUT|ENOTFOUND|ECONNRESET|EHOSTUNREACH|Pool is closed|Access denied|Unable to acquire a connection|cannot enqueue|Connection lost/.test(texto)) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "O manejo precisa do banco. Nada foi gravado no arquivo local.",
+          });
         }
         throw err;
       }
