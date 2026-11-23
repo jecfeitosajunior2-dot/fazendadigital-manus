@@ -150,6 +150,7 @@ type ManutencaoDraft = {
   pecaValor: string;
   pecaSearch: string;
   origemPeca?: OrigemPecaFormulario;
+  chaveOperacao?: string;
 };
 
 const btnAcaoBaseCls =
@@ -232,6 +233,11 @@ export default function ManutencaoFormPage() {
   const produtoRetornoIdRef = useRef<number | null>(null);
 
   const [form, setForm] = useState<FormState>(emptyForm);
+  const chaveOperacaoRef = useRef(
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `manutencao-${Date.now()}`,
+  );
   const [pecas, setPecas] = useState<PecaItem[]>([]);
   const [tipoExecucao, setTipoExecucao] = useState<TipoExecucaoForm>("interna");
   const [fornecedorId, setFornecedorId] = useState("");
@@ -356,6 +362,7 @@ export default function ManutencaoFormPage() {
         setPecaSearch(draft.pecaSearch ?? "");
         setOrigemPeca(draft.origemPeca === "oficina" ? "oficina" : "estoque");
         initializedForId.current = draft.initializedForId;
+        if (draft.chaveOperacao) chaveOperacaoRef.current = draft.chaveOperacao;
         draftRestoredRef.current = true;
       } catch {
         /* rascunho inválido */
@@ -536,6 +543,7 @@ export default function ManutencaoFormPage() {
       pecaValor,
       pecaSearch,
       origemPeca,
+      chaveOperacao: chaveOperacaoRef.current,
     };
     sessionStorage.setItem(MANUTENCAO_DRAFT_KEY, JSON.stringify(draft));
   };
@@ -880,6 +888,7 @@ export default function ManutencaoFormPage() {
       tipoExecucao: tipoExecucao || undefined,
       valorMaoObra: tipoExecucao === "interna" ? 0 : valorMaoObraNum,
       pecas: pecas.map(payloadPecaManutencao),
+      ...(isEdit ? {} : { chaveOperacao: chaveOperacaoRef.current }),
     };
 
     if (isEdit) updateMutation.mutate({ id: editId, ...payload });

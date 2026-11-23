@@ -2,6 +2,7 @@ import { drizzle } from "drizzle-orm/mysql2";
 import mysql from "mysql2/promise";
 import { config } from "dotenv";
 import * as schema from "../drizzle/schema";
+import { afirmarBancoDescartavel } from "./isolamentoMysql";
 import { createMysqlPool } from "./_core/mysqlPool";
 import { ensureFinanceiroNucleoSchema } from "./ensureFinanceiroNucleoSchema";
 import { ensureEstoqueOperacoesSchema } from "./ensureEstoqueOperacoesSchema";
@@ -29,6 +30,12 @@ const FIN_USERS = [FIN_USER_A, FIN_USER_B] as const;
 
 export async function openFinanceiroMysqlHarness(): Promise<FinanceiroMysqlHarness | null> {
   if (!process.env.DATABASE_URL) return null;
+  const alvo = new URL(process.env.DATABASE_URL);
+  afirmarBancoDescartavel({
+    host: alvo.hostname,
+    port: Number(alvo.port || 3306),
+    database: alvo.pathname.replace(/^\//, ""),
+  });
   let pool: mysql.Pool;
   try {
     pool = createMysqlPool(8);

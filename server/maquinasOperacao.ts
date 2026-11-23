@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { abastecimentos, maquinas, manutencoes } from "../drizzle/schema";
 import { db as dbPadrao } from "./db";
 import { autorizarOperacaoPersistida } from "./cadastroAnimalAutorizado";
@@ -262,16 +262,27 @@ export async function travarMaquinaNoTx(
   return atual;
 }
 
-async function existeManutencao(
+async function manutencaoImpedeTransferencia(
   tx: Parameters<Parameters<Banco["transaction"]>[0]>[0],
   id: number,
 ) {
-  const [man] = await tx
-    .select({ id: manutencoes.id })
-    .from(manutencoes)
-    .where(eq(manutencoes.maquinaId, id))
-    .limit(1);
-  return Boolean(man);
+  const colunas = await tx.execute(sql`SHOW COLUMNS FROM manutencoes LIKE 'fazendaId'`);
+  const pacote = colunas as unknown as [{ Field?: string }[], unknown] | { Field?: string }[];
+  const lista = Array.isArray(pacote) && Array.isArray(pacote[0]) ? pacote[0] : [];
+  if (lista.length === 0) {
+    const [man] = await tx
+      .select({ id: manutencoes.id })
+      .from(manutencoes)
+      .where(eq(manutencoes.maquinaId, id))
+      .limit(1);
+    return Boolean(man);
+  }
+  const antigas = await tx.execute(
+    sql`SELECT id FROM manutencoes WHERE maquinaId = ${id} AND fazendaId IS NULL LIMIT 1`,
+  );
+  const linhas = antigas as unknown as [{ id: number }[], unknown] | { id: number }[];
+  const achadas = Array.isArray(linhas) && Array.isArray(linhas[0]) ? linhas[0] : [];
+  return achadas.length > 0;
 }
 
 async function prepararSituacao(
@@ -378,7 +389,7 @@ export const maquinasOperacao = {
         await autorizar(tx, pedido, atual.fazendaId);
       }
       const destino = fazendaNova ?? atual.fazendaId ?? null;
-      if (destino != null && atual.fazendaId != null && destino !== atual.fazendaId && await existeManutencao(tx, id)) {
+      if (destino != null && atual.fazendaId != null && destino !== atual.fazendaId && await manutencaoImpedeTransferencia(tx, id)) {
         throw new TRPCError({ code: "BAD_REQUEST", message: MSG_MAQUINA_TRANSFERENCIA });
       }
       if (destino != null) {

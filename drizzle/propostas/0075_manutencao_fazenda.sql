@@ -5,3 +5,6 @@
 
 ALTER TABLE `manutencoes`
   ADD COLUMN `fazendaId` int NULL;
+
+CREATE INDEX `manutencoes_user_fazenda_idx`
+  ON `manutencoes` (`userId`, `fazendaId`);

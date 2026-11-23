@@ -9,6 +9,9 @@ export const MSG_MANUT_EXCLUSAO_ESTORNADA =
 export const MSG_MANUT_EXCLUSAO_CONCLUIDA =
   "Manutenção concluída não pode ser excluída. Use Estornar manutenção para cancelar e preservar o histórico.";
 
+export const MSG_MANUT_EXCLUSAO_BLOQUEADA =
+  "A manutenção não é apagada. O histórico fica guardado.";
+
 export function manutencaoEstaConcluida(status: string | null | undefined): boolean {
   return String(status ?? "").trim().toLowerCase() === MANUT_STATUS_CONCLUIDA;
 }
@@ -21,10 +24,7 @@ export function acoesMenuManutencao(status: string | null | undefined): {
   if (manutencaoEstaEstornada(status)) {
     return { podeEstornar: false, podeExcluir: false };
   }
-  if (manutencaoEstaConcluida(status)) {
-    return { podeEstornar: true, podeExcluir: false };
-  }
-  return { podeEstornar: true, podeExcluir: true };
+  return { podeEstornar: true, podeExcluir: false };
 }
 
 export function recusarExclusaoManutencao(
@@ -36,5 +36,5 @@ export function recusarExclusaoManutencao(
   if (manutencaoEstaConcluida(status)) {
     return { recusar: true, message: MSG_MANUT_EXCLUSAO_CONCLUIDA };
   }
-  return { recusar: false };
+  return { recusar: true, message: MSG_MANUT_EXCLUSAO_BLOQUEADA };
 }

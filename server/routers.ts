@@ -131,6 +131,7 @@ import {
 import { MSG_COMPRA_EDITAR_INTEGRADA, MSG_COMPRA_LINHA_ISOLADA, isMysqlDuplicateKey } from "../shared/compraInsumos";
 import { isOperacaoTransferenciaInsumos } from "../shared/estoqueTransferencia";
 import { maquinasOperacao, MSG_MAQUINA_SEM_MYSQL, travarMaquinaNoTx, type PermissaoMaquina } from "./maquinasOperacao";
+import { manutencoesOperacao, type PermissaoManutencao } from "./manutencoesOperacao";
 import { importarPlanilhaMaquinas } from "./maquinasImportacao";
 import { compraInsumosService } from "./compraInsumosMysql";
 import { transferenciaInsumosService } from "./transferenciaInsumosMysql";
@@ -6240,6 +6241,7 @@ const manutencaoBaseInput = z.object({
   valorMaoObra: z.number().min(0).optional(),
   observacoes: z.string().optional(),
   pecas: z.array(pecaInput).optional(),
+  chaveOperacao: z.string().trim().min(8).max(80).optional(),
 });
 
 /** Calcula valor de peças, mão de obra e total geral. */
@@ -6800,140 +6802,82 @@ function mergeManutencoesDbLocal<T extends { id: number; updatedAt?: unknown; cr
   });
 }
 
+function sessaoManutencao(
+  user: { id: number; sessionVersion?: number | null },
+  permissaoId: PermissaoManutencao,
+) {
+  return {
+    executorId: user.id,
+    sessionVersionDaSessao: user.sessionVersion ?? null,
+    permissaoId,
+  };
+}
+
 const manutencoesRouter = router({
   list: protectedProcedure
     .input(z.object({ maquinaId: z.number().optional() }).optional())
-    .query(async ({ ctx, input }) => {
-      let dbRows: Awaited<ReturnType<typeof listLocalManutencoes>> = [];
-      let dbOk = false;
-      try {
-        const conditions = [eq(manutencoes.userId, ctx.user.id)];
-        if (input?.maquinaId) conditions.push(eq(manutencoes.maquinaId, input.maquinaId));
-        dbRows = (await db
-          .select(colunasManutencaoSemChaveOperacao())
-          .from(manutencoes)
-          .where(and(...conditions))
-          .orderBy(desc(manutencoes.createdAt))) as typeof dbRows;
-        dbOk = true;
-      } catch (error) {
-        if (!isDatabaseUnavailable(error)) throw error;
-      }
-      const localRows = await listLocalManutencoes(ctx.user.id, { maquinaId: input?.maquinaId });
-      if (!dbOk) {
-        return localRows.map(r => ({
-          ...r,
-          consumiuEstoque: manutencaoTemConsumoEstoque(r.pecas ?? []),
-        }));
-      }
-      const merged = mergeManutencoesDbLocal(dbRows, localRows);
-      return enriquecerManutencoesListagem(ctx.user.id, merged);
-    }),
+    .query(({ ctx, input }) =>
+      manutencoesOperacao.listar(
+        sessaoManutencao(ctx.user, "manutencoes.visualizar"),
+        { maquinaId: input?.maquinaId },
+      ),
+    ),
 
   get: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ ctx, input }) => {
-      let dbRegistro: (typeof manutencoes.$inferSelect & { pecas: unknown[] }) | null = null;
-      try {
-        const [registro] = await db
-          .select(colunasManutencaoSemChaveOperacao())
-          .from(manutencoes)
-          .where(and(eq(manutencoes.id, input.id), eq(manutencoes.userId, ctx.user.id)));
-        if (registro) {
-          const pecas = await db
-            .select()
-            .from(manutencaoPecas)
-            .where(eq(manutencaoPecas.manutencaoId, input.id))
-            .orderBy(manutencaoPecas.id);
-          dbRegistro = { ...registro, pecas };
-        }
-      } catch (error) {
-        if (!isDatabaseUnavailable(error)) throw error;
-        return getLocalManutencao(ctx.user.id, input.id);
-      }
-
-      const local = await getLocalManutencao(ctx.user.id, input.id);
-      if (!dbRegistro) return local;
-      if (!local) return dbRegistro;
-      return manutencaoUpdatedAtMs(local) >= manutencaoUpdatedAtMs(dbRegistro)
-        ? local
-        : dbRegistro;
-    }),
+    .query(({ ctx, input }) =>
+      manutencoesOperacao.obter(sessaoManutencao(ctx.user, "manutencoes.visualizar"), input.id),
+    ),
 
   listPecas: protectedProcedure
     .input(z.object({ manutencaoId: z.number() }))
-    .query(async ({ ctx, input }) => {
-      try {
-        return await db
-          .select()
-          .from(manutencaoPecas)
-          .where(eq(manutencaoPecas.manutencaoId, input.manutencaoId))
-          .orderBy(manutencaoPecas.id);
-      } catch (error) {
-        if (!isDatabaseUnavailable(error)) throw error;
-        const local = await getLocalManutencao(ctx.user.id, input.manutencaoId);
-        return local?.pecas ?? [];
-      }
-    }),
+    .query(({ ctx, input }) =>
+      manutencoesOperacao.listarPecas(
+        sessaoManutencao(ctx.user, "manutencoes.visualizar"),
+        input.manutencaoId,
+      ),
+    ),
 
   create: protectedProcedure
-    .input(manutencaoBaseInput)
+    .input(manutencaoBaseInput.extend({
+      chaveOperacao: z.string().trim().min(8).max(80),
+    }))
     .mutation(async ({ ctx, input }) => {
-      const { data, proximaManutencao, pecas, valorMaoObra, ...rest } = input;
-      await assertMaquinaAtivaParaOperacao(ctx.user, rest.maquinaId, "manutencoes.criar");
+      const { data, proximaManutencao, pecas, valorMaoObra, chaveOperacao, ...rest } = input;
       const valorMaoObraOficial = valorMaoObraOficialDaOs(rest.tipoExecucao, valorMaoObra);
       const { pecasEstoqueInput, pecasOficina } = prepararPecasManutencaoDoInput(
         pecas,
         rest.tipoExecucao,
       );
       const pecasResolvidas = await resolverPecasComCustoMedioEstoque(pecasEstoqueInput);
-      const custos = calcularCustosManutencaoCompletos({
-        pecasEstoque: pecasResolvidas,
-        pecasOficina,
-        valorMaoObra: valorMaoObraOficial,
-      });
-
       try {
-        const prestadorPessoaId = await resolverPrestadorPessoaOs(
-          ctx.user.id,
-          rest.tipoExecucao,
-          rest.prestadorPessoaId,
+        return await manutencoesOperacao.criar(
+          sessaoManutencao(ctx.user, "manutencoes.criar"),
+          {
+            maquinaId: rest.maquinaId,
+            tipo: rest.tipo,
+            descricao: rest.descricao,
+            data,
+            horimetro: rest.horimetro,
+            proximaManutencao: proximaManutencao || undefined,
+            prestadorNome: rest.prestadorNome,
+            prestadorContato: rest.prestadorContato,
+            prestadorPessoaId: rest.prestadorPessoaId,
+            tipoExecucao: rest.tipoExecucao,
+            valorMaoObra: valorMaoObraOficial,
+            observacoes: rest.observacoes,
+            pecas: pecasResolvidas,
+            pecasOficina,
+            chaveOperacao,
+            registradoPor: ctx.user.name?.trim() || `user-${ctx.user.id}`,
+          },
         );
-        const persistencia = await resolverFazendaPersistenciaOs(
-          ctx.user.id,
-          rest.maquinaId,
-          pecasResolvidas.length > 0,
-        );
-        const persistido = await persistirManutencaoCompletaMysql({
-          executor: { id: ctx.user.id, sessionVersion: ctx.user.sessionVersion ?? null },
-          userId: ctx.user.id,
-          registradoPor: ctx.user.name?.trim() || `user-${ctx.user.id}`,
-          maquinaId: rest.maquinaId,
-          fazendaId: persistencia.fazendaId,
-          tipo: rest.tipo,
-          descricao: rest.descricao,
-          data,
-          horimetro: rest.horimetro,
-          proximaManutencao: proximaManutencao || undefined,
-          prestadorNome: rest.prestadorNome,
-          prestadorContato: rest.prestadorContato,
-          prestadorPessoaId,
-          valorMaoObra: custos.valorMaoObra,
-          observacoes: rest.observacoes,
-          pecas: pecasResolvidas,
-          pecasOficina,
-          tipoExecucao: rest.tipoExecucao,
-        });
-        return { success: true, id: persistido.id };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         if (error instanceof ManutencaoEstoqueError || error instanceof EstoqueCapitalError) {
           throw new TRPCError({ code: "BAD_REQUEST", message: error.message });
         }
-        if (!isDatabaseUnavailable(error)) throw error;
-        if (pecasResolvidas.length > 0) {
-          throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_MANUT_MYSQL_OBRIGATORIO });
-        }
-        throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_MAQUINA_SEM_MYSQL });
+        throw error;
       }
     }),
 
@@ -6942,475 +6886,66 @@ const manutencoesRouter = router({
     .mutation(async ({ ctx, input }) => {
       const { id, data, proximaManutencao, pecas, valorMaoObra, ...rest } = input;
       const valorMaoObraOficial = valorMaoObraOficialDaOs(rest.tipoExecucao, valorMaoObra);
-
-      let anterior: {
-        maquinaId: number;
-        status?: string | null;
-        valorPecas?: string | number | null;
-        valorPecasOficina?: string | number | null;
-      } | null = null;
-      let pecasAntigas: {
-        estoqueId: number | null;
-        quantidade: string | number;
-        valorUnitario?: string | number | null;
-        estoqueMovimentacaoId?: number | null;
-        origem?: string | null;
-      }[] = [];
-      let fromLocal = false;
-
-      try {
-        const [row] = await db
-          .select({
-            maquinaId: manutencoes.maquinaId,
-            status: manutencoes.status,
-            valorPecas: manutencoes.valorPecas,
-            valorPecasOficina: manutencoes.valorPecasOficina,
-          })
-          .from(manutencoes)
-          .where(and(eq(manutencoes.id, id), eq(manutencoes.userId, ctx.user.id)))
-          .limit(1);
-        anterior = row ?? null;
-        if (anterior) {
-          pecasAntigas = await db
-            .select({
-              estoqueId: manutencaoPecas.estoqueId,
-              quantidade: manutencaoPecas.quantidade,
-              valorUnitario: manutencaoPecas.valorUnitario,
-              estoqueMovimentacaoId: manutencaoPecas.estoqueMovimentacaoId,
-              origem: manutencaoPecas.origem,
-            })
-            .from(manutencaoPecas)
-            .where(eq(manutencaoPecas.manutencaoId, id));
-        }
-      } catch (error) {
-        if (!isDatabaseUnavailable(error)) throw error;
-        if (manutencaoTemConsumoEstoque(pecas ?? []) || (pecas ?? []).some(p => p.estoqueId != null)) {
-          throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_MANUT_MYSQL_OBRIGATORIO });
-        }
-        fromLocal = true;
-        const local = await getLocalManutencao(ctx.user.id, id);
-        if (local) {
-          anterior = { maquinaId: Number(local.maquinaId), status: local.status ?? null };
-          pecasAntigas = (local.pecas ?? []).map(p => ({
-            estoqueId: p.estoqueId ?? null,
-            quantidade: p.quantidade,
-            valorUnitario: p.valorUnitario,
-          }));
-        }
-      }
-
-      if (!anterior) {
-        const local = await getLocalManutencao(ctx.user.id, id);
-        if (!local) {
-          throw new TRPCError({ code: "NOT_FOUND", message: "Manutenção não encontrada." });
-        }
-        if (manutencaoTemConsumoEstoque(local.pecas ?? []) || manutencaoTemConsumoEstoque(pecas ?? [])) {
-          throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_MANUT_MYSQL_OBRIGATORIO });
-        }
-        fromLocal = true;
-        anterior = { maquinaId: Number(local.maquinaId), status: local.status ?? null };
-        pecasAntigas = (local.pecas ?? []).map(p => ({
-          estoqueId: p.estoqueId ?? null,
-          quantidade: p.quantidade,
-          valorUnitario: p.valorUnitario,
-        }));
-      }
-
-      if (manutencaoEstornada(anterior.status)) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Manutenção estornada não pode ser editada.",
-        });
-      }
-
-      await assertMaquinaAtivaParaOperacao(ctx.user, rest.maquinaId, "manutencoes.editar", {
-        allowSameInactiveId: anterior.maquinaId,
-      });
-
       const { pecasEstoqueInput, pecasOficina } = prepararPecasManutencaoDoInput(
         pecas,
         rest.tipoExecucao,
       );
-
-      const temEstoqueAntigo = manutencaoTemConsumoEstoque(pecasAntigas);
-      const patrimonializada = pecasAntigas.some(pecaManutencaoTemVinculo);
-      if (patrimonializada || !temEstoqueAntigo) {
-        if (fromLocal) {
-          if (temEstoqueAntigo) {
-            throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_MANUT_MYSQL_OBRIGATORIO });
-          }
-          const custosLocal = calcularCustosManutencaoCompletos({
-            pecasEstoque: [],
-            pecasOficina,
-            valorMaoObra: valorMaoObraOficial,
-          });
-          await updateLocalManutencao(ctx.user.id, id, {
-            ...rest,
+      try {
+        return await manutencoesOperacao.editar(
+          sessaoManutencao(ctx.user, "manutencoes.editar"),
+          id,
+          {
+            maquinaId: rest.maquinaId,
+            tipo: rest.tipo,
+            descricao: rest.descricao,
             data,
-            proximaManutencao: proximaManutencao || null,
-            prestadorNome: rest.prestadorNome ?? null,
-            prestadorContato: rest.prestadorContato ?? null,
-            prestadorPessoaId: rest.prestadorPessoaId ?? null,
-            descricao: rest.descricao ?? null,
-            ...valoresOsDosCustos(custosLocal),
-            pecas: pecasOficina.map(p => ({
-              estoqueId: null as number | null,
-              nome: p.nome,
-              quantidade: p.quantidade.toFixed(2),
-              valorUnitario: p.valorUnitario.toFixed(2),
-              valorTotal: p.valorTotal.toFixed(2),
-              origem: MANUT_PECA_ORIGEM_OFICINA,
-            })),
-          });
-          return { success: true, localFallback: true };
-        }
-        try {
-          const prestadorPessoaId = await resolverPrestadorPessoaOs(
-            ctx.user.id,
-            rest.tipoExecucao,
-            rest.prestadorPessoaId,
-          );
-          await editarPecasOficinaMysql({
-            userId: ctx.user.id,
-            id,
+            horimetro: rest.horimetro,
+            proximaManutencao: proximaManutencao || undefined,
+            prestadorNome: rest.prestadorNome,
+            prestadorContato: rest.prestadorContato,
+            prestadorPessoaId: rest.prestadorPessoaId,
             tipoExecucao: rest.tipoExecucao,
             valorMaoObra: valorMaoObraOficial,
+            observacoes: rest.observacoes,
+            pecas: pecasEstoqueInput.map(peca => ({
+              estoqueId: Number(peca.estoqueId),
+              nome: peca.nome,
+              quantidade: peca.quantidade,
+              valorUnitario: Number(peca.valorUnitario ?? 0),
+            })),
             pecasOficina,
-            pecasEstoqueInput,
-            cabecalho: {
-              maquinaId: rest.maquinaId,
-              tipo: rest.tipo,
-              descricao: rest.descricao ?? null,
-              data,
-              horimetro: rest.horimetro ?? null,
-              proximaManutencao: proximaManutencao || null,
-              prestadorNome: rest.prestadorNome ?? null,
-              prestadorContato: rest.prestadorContato ?? null,
-              prestadorPessoaId,
-              observacoes: rest.observacoes ?? null,
-              tipoExecucao: rest.tipoExecucao ?? null,
-            },
-          });
-          return { success: true };
-        } catch (error) {
-          throwSeErroManutencaoEstoque(error);
-        }
-      }
-
-      await assertPecasSemCapitalInicializado([
-        ...pecasAntigas.map(p => Number(p.estoqueId)),
-        ...pecasEstoqueInput.map(p => Number(p.estoqueId)),
-      ]);
-
-      const credito = new Map<number, number>();
-      const custoCongelado = new Map<number, number>();
-      for (const p of pecasAntigas) {
-        if (p.estoqueId == null) continue;
-        const q = parseFloat(String(p.quantidade));
-        if (Number.isFinite(q) && q > 0) {
-          credito.set(p.estoqueId, (credito.get(p.estoqueId) ?? 0) + q);
-        }
-        const vu = parseCustoMedio(p.valorUnitario);
-        if (vu != null && !custoCongelado.has(p.estoqueId)) {
-          custoCongelado.set(p.estoqueId, vu);
-        }
-      }
-
-      const pecasResolvidas = await resolverPecasComCustoMedioEstoque(
-        pecasEstoqueInput,
-        credito,
-        custoCongelado,
-      );
-      const custos = calcularCustosManutencaoCompletos({
-        pecasEstoque: pecasResolvidas,
-        pecasOficina,
-        valorMaoObra: valorMaoObraOficial,
-      });
-      const totaisOs = valoresOsDosCustos(custos);
-      const pecasPayload = [
-        ...pecasLocaisFromResolvidas(pecasResolvidas).map(p => ({
-          ...p,
-          origem: MANUT_PECA_ORIGEM_ESTOQUE,
-        })),
-        ...pecasOficina.map(p => ({
-          estoqueId: null as number | null,
-          nome: p.nome,
-          quantidade: p.quantidade.toFixed(2),
-          valorUnitario: p.valorUnitario.toFixed(2),
-          valorTotal: p.valorTotal.toFixed(2),
-          origem: MANUT_PECA_ORIGEM_OFICINA,
-        })),
-      ];
-      const localPayload = {
-        ...rest,
-        data,
-        proximaManutencao: proximaManutencao || null,
-        prestadorNome: rest.prestadorNome ?? null,
-        prestadorContato: rest.prestadorContato ?? null,
-        prestadorPessoaId: rest.prestadorPessoaId ?? null,
-        descricao: rest.descricao ?? null,
-        ...totaisOs,
-        pecas: pecasPayload,
-      };
-
-      if (fromLocal) {
-        if (manutencaoTemConsumoEstoque(pecasAntigas) || pecasResolvidas.length > 0) {
-          throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_MANUT_MYSQL_OBRIGATORIO });
-        }
-        await updateLocalManutencao(ctx.user.id, id, localPayload);
-        return { success: true, localFallback: true };
-      }
-
-      try {
-        await db.transaction(async tx => {
-          await tx
-            .update(manutencoes)
-            .set({
-              ...rest,
-              data,
-              proximaManutencao: proximaManutencao || null,
-              prestadorNome: rest.prestadorNome ?? null,
-              prestadorContato: rest.prestadorContato ?? null,
-              prestadorPessoaId: rest.prestadorPessoaId ?? null,
-              descricao: rest.descricao ?? null,
-              ...totaisOs,
-            })
-            .where(and(eq(manutencoes.id, id), eq(manutencoes.userId, ctx.user.id)));
-
-          await tx.delete(manutencaoPecas).where(eq(manutencaoPecas.manutencaoId, id));
-          if (pecasResolvidas.length > 0) {
-            await tx.insert(manutencaoPecas).values(
-              pecasResolvidas.map(p => ({
-                manutencaoId: id,
-                estoqueId: p.estoqueId,
-                nome: p.nome,
-                quantidade: p.quantidade.toFixed(2),
-                valorUnitario: p.valorUnitario.toFixed(2),
-                valorTotal: (p.quantidade * p.valorUnitario).toFixed(2),
-                origem: MANUT_PECA_ORIGEM_ESTOQUE,
-              })),
-            );
-          }
-          if (pecasOficina.length > 0) {
-            await tx.insert(manutencaoPecas).values(
-              pecasOficina.map(p => ({
-                manutencaoId: id,
-                estoqueId: null,
-                nome: p.nome,
-                quantidade: p.quantidade.toFixed(2),
-                valorUnitario: p.valorUnitario.toFixed(2),
-                valorTotal: p.valorTotal.toFixed(2),
-                origem: MANUT_PECA_ORIGEM_OFICINA,
-              })),
-            );
-          }
-          const baixa = await aplicarBaixaEstoquePecasManutencao(
-            tx,
-            pecasResolvidas,
-            pecasAntigas,
-          );
-          if (baixa.pendenteLocal.size > 0) {
-            throw new TRPCError({
-              code: "BAD_REQUEST",
-              message: MSG_MANUT_ESTOQUE_AUSENTE_MYSQL,
-            });
-          }
-        });
-        const localExistente = await getLocalManutencao(ctx.user.id, id);
-        if (localExistente) {
-          await updateLocalManutencao(ctx.user.id, id, localPayload);
-        }
-        return { success: true };
+          },
+        );
       } catch (error) {
         if (error instanceof TRPCError) throw error;
-        if (error instanceof EstoqueCapitalError) {
+        if (error instanceof ManutencaoEstoqueError || error instanceof EstoqueCapitalError) {
           throw new TRPCError({ code: "BAD_REQUEST", message: error.message });
         }
-        if (!isDatabaseUnavailable(error)) throw error;
-        if (manutencaoTemConsumoEstoque(pecasAntigas) || pecasResolvidas.length > 0) {
-          throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_MANUT_MYSQL_OBRIGATORIO });
-        }
-        await updateLocalManutencao(ctx.user.id, id, localPayload);
-        return { success: true, localFallback: true };
+        throw error;
       }
     }),
 
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ ctx, input }) => {
-      let pecasAntigas: { estoqueId: number | null; quantidade: string | number }[] = [];
-      let status: string | null = null;
-      let fromLocal = false;
-
-      try {
-        const [row] = await db
-          .select({ id: manutencoes.id, status: manutencoes.status })
-          .from(manutencoes)
-          .where(and(eq(manutencoes.id, input.id), eq(manutencoes.userId, ctx.user.id)))
-          .limit(1);
-        if (row) {
-          status = row.status ?? null;
-          pecasAntigas = await db
-            .select({
-              estoqueId: manutencaoPecas.estoqueId,
-              quantidade: manutencaoPecas.quantidade,
-            })
-            .from(manutencaoPecas)
-            .where(eq(manutencaoPecas.manutencaoId, input.id));
-        } else {
-          fromLocal = true;
-        }
-      } catch (error) {
-        if (!isDatabaseUnavailable(error)) throw error;
-        fromLocal = true;
-      }
-
-      if (fromLocal) {
-        const local = await getLocalManutencao(ctx.user.id, input.id);
-        if (!local) {
-          throw new TRPCError({ code: "NOT_FOUND", message: "Manutenção não encontrada." });
-        }
-        status = local.status ?? null;
-        pecasAntigas = (local.pecas ?? []).map(p => ({
-          estoqueId: p.estoqueId ?? null,
-          quantidade: p.quantidade,
-        }));
-      }
-
-      const exclusao = recusarExclusaoManutencao(status);
-      if (exclusao.recusar) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: exclusao.message,
-        });
-      }
-
-      if (manutencaoTemConsumoEstoque(pecasAntigas)) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message:
-            "Esta manutenção consumiu peças do estoque. Use Estornar manutenção para devolver as peças e preservar o histórico.",
-        });
-      }
-
-      if (fromLocal) {
-        await deleteLocalManutencao(ctx.user.id, input.id);
-        return { success: true, localFallback: true };
-      }
-
-      try {
-        await db.transaction(async tx => {
-          await tx.delete(manutencaoPecas).where(eq(manutencaoPecas.manutencaoId, input.id));
-          await tx
-            .delete(manutencoes)
-            .where(and(eq(manutencoes.id, input.id), eq(manutencoes.userId, ctx.user.id)));
-        });
-        return { success: true };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        if (!isDatabaseUnavailable(error)) throw error;
-        await deleteLocalManutencao(ctx.user.id, input.id);
-        return { success: true, localFallback: true };
-      }
-    }),
+    .mutation(({ ctx, input }) =>
+      manutencoesOperacao.excluir(sessaoManutencao(ctx.user, "manutencoes.inativar"), input.id),
+    ),
 
   estornar: protectedProcedure
-    .input(
-      z.object({
-        id: z.number(),
-        motivo: z.string().trim().min(1).max(255).optional(),
-      }),
-    )
-    .mutation(async ({ ctx, input }) => {
-      const motivo = (input.motivo ?? "").trim() || MOTIVO_ESTORNO_MANUT_PADRAO;
-      let pecasAntigas: {
-        estoqueId: number | null;
-        quantidade: string | number;
-        estoqueMovimentacaoId?: number | null;
-      }[] = [];
+    .input(z.object({
+      id: z.number(),
+      motivo: z.string().trim().min(1).max(255).optional(),
+    }))
+    .mutation(({ ctx, input }) =>
+      manutencoesOperacao.estornar(
+        sessaoManutencao(ctx.user, "manutencoes.estornar"),
+        input.id,
+        (input.motivo ?? "").trim() || MOTIVO_ESTORNO_MANUT_PADRAO,
+        hojeISODateLocal(),
+        ctx.user.name?.trim() || `user-${ctx.user.id}`,
+      ),
+    ),
 
-      try {
-        const [row] = await db
-          .select({ id: manutencoes.id, status: manutencoes.status })
-          .from(manutencoes)
-          .where(and(eq(manutencoes.id, input.id), eq(manutencoes.userId, ctx.user.id)))
-          .limit(1);
-        if (!row) {
-          throw new TRPCError({ code: "NOT_FOUND", message: "Manutenção não encontrada." });
-        }
-        pecasAntigas = await db
-          .select({
-            estoqueId: manutencaoPecas.estoqueId,
-            quantidade: manutencaoPecas.quantidade,
-            estoqueMovimentacaoId: manutencaoPecas.estoqueMovimentacaoId,
-          })
-          .from(manutencaoPecas)
-          .where(eq(manutencaoPecas.manutencaoId, input.id));
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throwSeErroManutencaoEstoque(error);
-      }
-
-      const algumEstoqueComCapital = await estoquesTemCapitalInicializado(
-        pecasAntigas.map(p => Number(p.estoqueId)),
-      );
-
-      try {
-        const resultado = await estornarManutencaoCompletaMysql({
-          userId: ctx.user.id,
-          registradoPor: ctx.user.name?.trim() || `user-${ctx.user.id}`,
-          id: input.id,
-          motivo,
-          hojeISO: hojeISODateLocal(),
-          algumEstoqueComCapital,
-        });
-        if (resultado.handled) {
-          return { success: true, alreadyEstornado: resultado.alreadyEstornado };
-        }
-      } catch (error) {
-        throwSeErroManutencaoEstoque(error);
-      }
-
-      await assertPecasSemCapitalInicializado(pecasAntigas.map(p => Number(p.estoqueId)));
-
-      try {
-        await db.transaction(async tx => {
-          const baixa = await aplicarBaixaEstoquePecasManutencao(tx, [], pecasAntigas);
-          if (baixa.pendenteLocal.size > 0) {
-            throw new TRPCError({
-              code: "BAD_REQUEST",
-              message: MSG_MANUT_ESTOQUE_AUSENTE_MYSQL,
-            });
-          }
-          await tx
-            .update(manutencoes)
-            .set({
-              status: "estornado",
-              motivoEstorno: motivo,
-              estornadoEm: sql`CURRENT_TIMESTAMP`,
-            })
-            .where(and(eq(manutencoes.id, input.id), eq(manutencoes.userId, ctx.user.id)));
-        });
-        const localExistente = await getLocalManutencao(ctx.user.id, input.id);
-        if (localExistente) {
-          await updateLocalManutencao(ctx.user.id, input.id, { status: "estornado" });
-        }
-        return { success: true };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        if (error instanceof EstoqueCapitalError) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: error.message });
-        }
-        if (!isDatabaseUnavailable(error)) {
-          console.error("[manutencoes.estornar]", error);
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Não foi possível estornar a manutenção. Tente novamente.",
-          });
-        }
-        throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_MANUT_MYSQL_OBRIGATORIO });
-      }
-    }),
 });
 
 // ─── PESAGENS ROUTER ──────────────────────────────────────────────────────────
