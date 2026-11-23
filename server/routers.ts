@@ -360,7 +360,7 @@ import { ioConsultaReproducaoDrizzle } from "./consultaReproducaoAutorizadaDb";
 import { enrichReproducaoListPartoCriasDb } from "./enrichReproducaoListPartoCrias";
 import { enrichAnimalGenealogiaDisplayDb } from "./enrichAnimalGenealogiaDisplay";
 import { enrichAnimalDescendentesDb } from "./enrichAnimalDescendentes";
-import { assertFazendaCanDelete, getFazendaDeleteCheck } from "./fazendaDeleteCheck";
+import { fazendasOperacao } from "./fazendasOperacao";
 import { carregarIdentidade } from "./_core/carregarIdentidade";
 import { identificadorDeLogin } from "./_core/identificadorLogin";
 import { MSG_LOGIN_INVALIDO, senhaConfereComHash } from "./_core/loginSenha";
@@ -9453,7 +9453,6 @@ export function comporListaFazendas<T extends LinhaFazendaLista>(entrada: {
   if (!identidade || !loginPermitido(identidade.situacao)) return { ok: false, motivo: "sem_identidade" };
 
   const daConta = entrada.registros.filter((row) => row.userId === identidade.titularUserId);
-  const locaisDaConta = entrada.locais.filter((row) => row.userId === identidade.titularUserId);
   const fazendasDoTitular = daConta.map((row) => ({ id: row.id, userId: row.userId }));
   const extras = {
     titularInformadoPeloCliente: entrada.titularInformadoPeloCliente,
@@ -9476,21 +9475,12 @@ export function comporListaFazendas<T extends LinhaFazendaLista>(entrada: {
     return { ok: false, motivo: "sem_permissao" };
   }
 
-  const locaisPorId = new Map(locaisDaConta.map((row) => [row.id, row]));
-  const idsDoBanco = new Set<number>();
+  void entrada.locais;
+  void entrada.consultaMysqlConcluida;
   const fazendas: T[] = [];
   for (const row of daConta) {
     if (!autorizada(row).ok) continue;
-    idsDoBanco.add(row.id);
-    const local = locaisPorId.get(row.id);
-    fazendas.push(local && local.userId === identidade.titularUserId ? mergeFazendaData(row, local) : row);
-  }
-  if (entrada.consultaMysqlConcluida === false) {
-    for (const local of locaisDaConta) {
-      if (idsDoBanco.has(local.id)) continue;
-      if (!autorizada(local).ok) continue;
-      fazendas.push(local);
-    }
+    fazendas.push(row);
   }
   return { ok: true, fazendas };
 }
@@ -9510,148 +9500,38 @@ function mergeFazendaData<T extends Record<string, any>>(row: T, localRow?: Reco
   };
 }
 
+function sessaoFazenda(ctx: { user: { id: number; sessionVersion?: number | null } }) {
+  return {
+    executorId: ctx.user.id,
+    sessionVersionDaSessao: ctx.user.sessionVersion ?? null,
+  };
+}
+
 const fazendasRouter = router({
-  list: protectedProcedure.query(async ({ ctx }) => {
-    const identidade = identidadeDaLista(ctx.user);
-    if (!identidade) {
-      throw new TRPCError({ code: "UNAUTHORIZED", message: "Sessão inválida." });
-    }
-    const montar = (
-      registros: Array<Record<string, any> & { id: number; userId: number }>,
-      locais: Array<Record<string, any> & { id: number; userId: number }>,
-      permissoes: string[],
-      vinculos: Array<{ userId: number; fazendaId: number }>,
-      consultaMysqlConcluida: boolean,
-    ) => {
-      const resultado = comporListaFazendas({
-        identidade, permissoes, vinculos, registros, locais, consultaMysqlConcluida,
-      });
-      if (!resultado.ok) {
-        throw new TRPCError({
-          code: resultado.motivo === "sem_identidade" ? "UNAUTHORIZED" : "FORBIDDEN",
-          message: resultado.motivo === "sem_identidade"
-            ? "Sessão inválida."
-            : "Sem permissão para consultar as fazendas.",
-        });
-      }
-      return resultado.fazendas;
-    };
-    try {
-      const rows = await db.select().from(fazendas)
-        .where(eq(fazendas.userId, identidade.titularUserId))
-        .orderBy(desc(fazendas.createdAt));
-      const permissoes = identidade.papel === "principal"
-        ? []
-        : (await db.select({ permissao: usuarioPermissoes.permissao }).from(usuarioPermissoes).where(and(
-          eq(usuarioPermissoes.userId, identidade.id),
-          eq(usuarioPermissoes.titularUserId, identidade.titularUserId),
-        ))).map((row) => row.permissao);
-      const vinculos = identidade.papel === "principal"
-        ? []
-        : await db.select({
-          userId: usuarioFazendas.userId,
-          fazendaId: usuarioFazendas.fazendaId,
-        }).from(usuarioFazendas).where(eq(usuarioFazendas.userId, identidade.id));
-      const locais = (await listLocalFazendas(identidade.titularUserId))
-        .filter((row) => row.userId === identidade.titularUserId);
-      return montar(rows, locais, permissoes, vinculos, true);
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      if (!isDatabaseUnavailable(error)) throw error;
-      if (!deveUsarEspelhoQuandoBancoCai(identidade)) throw error;
-      const locais = (await listLocalFazendas(identidade.titularUserId))
-        .filter((row) => row.userId === identidade.titularUserId);
-      return montar([], locais, [], [], false);
-    }
-  }),
+  list: protectedProcedure.query(({ ctx }) => fazendasOperacao.listar(sessaoFazenda(ctx))),
 
   get: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ ctx, input }) => {
-      try {
-        const localRow = await getLocalFazenda(ctx.user.id, input.id);
-        const [row] = await db.select().from(fazendas).where(and(eq(fazendas.id, input.id), eq(fazendas.userId, ctx.user.id)));
-        if (!row) return localRow;
-        return mergeFazendaData(row, localRow);
-      } catch (error) {
-        if (isDatabaseUnavailable(error)) return getLocalFazenda(ctx.user.id, input.id);
-        throw error;
-      }
-    }),
+    .query(({ ctx, input }) => fazendasOperacao.obter(sessaoFazenda(ctx), input.id)),
 
   create: protectedProcedure
     .input(z.object({ nome: z.string(), ...fazendaFields }))
-    .mutation(async ({ ctx, input }) => {
-      try {
-        const result = await db.insert(fazendas).values({ userId: ctx.user.id, ...input });
-        const id = Number((result as any)[0]?.insertId ?? (result as any).insertId);
-        if (Number.isFinite(id) && id > 0) {
-          try {
-            await updateLocalFazenda(ctx.user.id, id, input);
-          } catch (mirrorError) {
-            console.warn("[fazendas.create] Espelho local não gravado:", mirrorError);
-          }
-        }
-        return { success: true, id };
-      } catch (error) {
-        if (isDatabaseUnavailable(error)) {
-          const result = await createLocalFazenda(ctx.user.id, input);
-          return { success: true, id: result.id, localFallback: true };
-        }
-        throw error;
-      }
-    }),
+    .mutation(({ ctx, input }) => fazendasOperacao.criar(sessaoFazenda(ctx), input)),
 
   update: protectedProcedure
     .input(z.object({ id: z.number(), nome: z.string().optional(), ...fazendaFields }))
-    .mutation(async ({ ctx, input }) => {
+    .mutation(({ ctx, input }) => {
       const { id, ...rest } = input;
-      try {
-        await db.update(fazendas).set(rest).where(and(eq(fazendas.id, id), eq(fazendas.userId, ctx.user.id)));
-        try {
-          await updateLocalFazenda(ctx.user.id, id, rest);
-        } catch (mirrorError) {
-          console.warn("[fazendas.update] Espelho local não gravado:", mirrorError);
-        }
-        return { success: true };
-      } catch (error) {
-        if (isDatabaseUnavailable(error)) {
-          await updateLocalFazenda(ctx.user.id, id, rest);
-          return { success: true, localFallback: true };
-        }
-        throw error;
-      }
+      return fazendasOperacao.atualizar(sessaoFazenda(ctx), id, rest);
     }),
 
   deleteCheck: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ ctx, input }) => {
-      try {
-        return await getFazendaDeleteCheck(ctx.user.id, input.id);
-      } catch (error) {
-        if (isDatabaseUnavailable(error)) {
-          return await getFazendaDeleteCheck(ctx.user.id, input.id, true);
-        }
-        throw error;
-      }
-    }),
+    .query(({ ctx, input }) => fazendasOperacao.conferirExclusao(sessaoFazenda(ctx), input.id)),
 
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ ctx, input }) => {
-      try {
-        await assertFazendaCanDelete(ctx.user.id, input.id);
-        await db.delete(fazendas).where(and(eq(fazendas.id, input.id), eq(fazendas.userId, ctx.user.id)));
-        return { success: true };
-      } catch (error) {
-        if (isDatabaseUnavailable(error)) {
-          await assertFazendaCanDelete(ctx.user.id, input.id, true);
-          await deleteLocalFazenda(ctx.user.id, input.id);
-          return { success: true, localFallback: true };
-        }
-        throw error;
-      }
-    }),
+    .mutation(({ ctx, input }) => fazendasOperacao.excluir(sessaoFazenda(ctx), input.id)),
 });
 
 function recusarPastoSemMysql(): never {

@@ -213,8 +213,9 @@ describe("fazendas.list — contrato e autorização", () => {
     expect(resultado.ok).toBe(true);
     if (!resultado.ok) return;
     expect(resultado.fazendas).toHaveLength(1);
-    expect(resultado.fazendas[0]?.sigla).toBe("PN");
     expect(resultado.fazendas[0]?.nome).toBe("Pasto Norte");
+    expect(resultado.fazendas[0]?.cidade).toBe("Norte");
+    expect(resultado.fazendas[0]?.sigla).toBeUndefined();
   });
 
   it("14. Todos os campos da resposta são preservados", () => {
@@ -300,8 +301,9 @@ describe("fazendas.list — contrato e autorização", () => {
     expect(deveUsarEspelhoQuandoBancoCai(pessoa({ id: 1, papel: "principal", titularUserId: 1, situacao: "inativo" }))).toBe(false);
     const fonte = readFileSync(resolve(here, "routers.ts"), "utf8");
     const lista = fonte.slice(fonte.indexOf("const fazendasRouter"), fonte.indexOf("const pastosRouter"));
-    expect(lista).toContain("if (!isDatabaseUnavailable(error)) throw error");
-    expect(lista).toContain("if (!deveUsarEspelhoQuandoBancoCai(identidade)) throw error");
+    expect(lista).toContain("fazendasOperacao.listar");
+    expect(lista).not.toContain("localFallback");
+    expect(lista).not.toContain("listLocalFazendas");
     expect(lista).not.toContain("return []");
     expect(lista).not.toContain("isProductionDeploy");
   });
@@ -322,11 +324,10 @@ describe("fazendas.list — contrato e autorização", () => {
     expect(resultado.fazendas[0]).not.toEqual({ id: 10, nome: "Pasto Norte" });
     const fonte = readFileSync(resolve(here, "routers.ts"), "utf8");
     const lista = fonte.slice(fonte.indexOf("const fazendasRouter"), fonte.indexOf("const pastosRouter"));
-    expect(lista).toContain("return resultado.fazendas");
-    expect(lista).toContain("eq(fazendas.userId, identidade.titularUserId)");
-    expect(lista).toContain("orderBy(desc(fazendas.createdAt))");
-    expect(lista).toContain("montar(rows, locais, permissoes, vinculos, true)");
-    expect(lista).toContain("montar([], locais, [], [], false)");
+    expect(lista).toContain("fazendasOperacao.listar");
+    expect(lista).toContain("fazendasOperacao.criar");
+    expect(lista).not.toContain("montar(rows, locais, permissoes, vinculos, true)");
+    expect(lista).not.toContain("localFallback");
   });
 
   it("A. Fazenda excluída do banco não volta pelo espelho", () => {
@@ -373,7 +374,7 @@ describe("fazendas.list — contrato e autorização", () => {
     expect(resultado.fazendas[0]?.userId).toBe(1);
     expect(resultado.fazendas[0]?.nome).toBe("Pasto Norte");
     expect(resultado.fazendas[0]?.cidade).toBe("Norte");
-    expect(resultado.fazendas[0]?.sigla).toBe("PN");
+    expect(resultado.fazendas[0]?.sigla).toBeUndefined();
   });
 
   it("D. Espelho de outra conta não aparece", () => {
@@ -418,7 +419,7 @@ describe("fazendas.list — contrato e autorização", () => {
     expect(resultado.fazendas).toEqual([]);
   });
 
-  it("G. Fallback do Principal usa o espelho quando a consulta não concluiu", () => {
+  it("G. Consulta sem o banco não devolve o espelho", () => {
     const resultado = listar({
       identidade: principal,
       permissoes: [],
@@ -427,27 +428,16 @@ describe("fazendas.list — contrato e autorização", () => {
       locais: [fazendaA, fazendaAlheia],
       consultaMysqlConcluida: false,
     });
-    expect(deveUsarEspelhoQuandoBancoCai(principal)).toBe(true);
     expect(resultado.ok).toBe(true);
     if (!resultado.ok) return;
-    expect(resultado.fazendas.map((f) => f.id)).toEqual([10]);
-    const secundarioOffline = listar({
-      identidade: secundario,
-      permissoes: ["fazendas.visualizar"],
-      vinculos: [{ userId: 3, fazendaId: 10 }],
-      registros: [],
-      locais: [fazendaA],
-      consultaMysqlConcluida: false,
-    });
-    expect(secundarioOffline.ok).toBe(true);
-    if (!secundarioOffline.ok) return;
-    expect(secundarioOffline.fazendas).toEqual([]);
+    expect(resultado.fazendas).toEqual([]);
   });
 
   it("H. Erro que não é queda de banco não busca o espelho", () => {
     const fonte = readFileSync(resolve(here, "routers.ts"), "utf8");
     const lista = fonte.slice(fonte.indexOf("const fazendasRouter"), fonte.indexOf("const pastosRouter"));
-    expect(lista).toContain("if (!isDatabaseUnavailable(error)) throw error");
+    expect(lista).toContain("fazendasOperacao");
+    expect(lista).not.toContain("localFallback");
     const vazio = listar({
       identidade: principal,
       permissoes: [],
