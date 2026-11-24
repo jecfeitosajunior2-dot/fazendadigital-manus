@@ -5,7 +5,8 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import mysql, { type RowDataPacket } from "mysql2/promise";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { criarAdministracaoDb } from "./administracaoDb";
+import bcrypt from "bcryptjs";
+import { criarAdministracaoDaAplicacao, criarAdministracaoDb } from "./administracaoDb";
 import { seloDaRevisao } from "./administracao";
 
 const exec = promisify(execFile);
@@ -462,6 +463,47 @@ describe.sequential("persistência administrativa em MySQL isolado", () => {
     expect(texto).not.toContain("segredo-senha");
     expect(texto).not.toContain("ficticio-openid");
     expect(texto).not.toContain("openId");
+  });
+
+  it("definição de senha grava hash, invalida a sessão e não audita o segredo", async () => {
+    const senha = "senha-inicial-isolada";
+    expect(await svc.definirSenhaAcesso(2, 4, senha)).toMatchObject({ ok: false, motivo: "sem_permissao" });
+    expect(await svc.definirSenhaAcesso(3, 3, senha)).toMatchObject({ ok: false, motivo: "auto_modificacao" });
+    expect(await svc.definirSenhaAcesso(1, 9, senha)).toMatchObject({ ok: false, motivo: "outro_titular" });
+    expect(await svc.definirSenhaAcesso(1, 1, senha)).toMatchObject({ ok: false, motivo: "alvo_protegido" });
+    expect(await svc.definirSenhaAcesso(1, 4, "curta")).toMatchObject({ ok: false, motivo: "senha_invalida" });
+    expect(await svc.definirSenhaAcesso(1, 4, senha)).toEqual({ ok: true });
+    const usuario = await valor<{ passwordHash: string; sessionVersion: number }>(
+      "SELECT passwordHash, sessionVersion FROM users WHERE id = 4",
+    );
+    expect(usuario.passwordHash).not.toBe(senha);
+    expect(await bcrypt.compare(senha, usuario.passwordHash)).toBe(true);
+    expect(usuario.sessionVersion).toBe(1);
+    const texto = JSON.stringify(await pool.query("SELECT dadosAnteriores, dadosPosteriores FROM auditoria_eventos"));
+    expect(texto).not.toContain(senha);
+    expect(texto).toContain("acessoPreparado");
+  });
+
+  it("a porta da aplicação recusa o nome do banco antigo", async () => {
+    await pool.query("CREATE DATABASE IF NOT EXISTS fazenda_digital");
+    const arquivo = mysql.createPool({
+      host: "127.0.0.1",
+      port: PORTA,
+      user: "root",
+      password: SENHA,
+      database: "fazenda_digital",
+    });
+    try {
+      const bloqueado = criarAdministracaoDaAplicacao(arquivo);
+      await expect(bloqueado.criarUsuario(1, {
+        name: "Nao pode",
+        email: "nao-pode@teste.isolado",
+        papel: "comum",
+      })).rejects.toThrow(/operacional/);
+    } finally {
+      await arquivo.end();
+      await pool.query("DROP DATABASE IF EXISTS fazenda_digital");
+    }
   });
 
   it("altera papel e aplica um conjunto de permissões", async () => {

@@ -10720,6 +10720,7 @@ import { nutricaoCochoLeiturasRouter } from "./nutricaoCochoLeiturasRouter";
 import { nutricaoVisaoGeralRouter } from "./nutricaoVisaoGeralRouter";
 import { listarBatidasAntigas, recusarCadastroBatidaAntiga, recusarExclusaoBatidaAntiga } from "./nutricaoBatidasAntigas";
 import { financeiroV2Router } from "./financeiroV2Router";
+import { acessoRouter } from "./acessoContaRouter";
 export const appRouter = router({
   auth: authRouter,
   animais: animaisRouter,
@@ -10752,5 +10753,6 @@ export const appRouter = router({
   pessoas: pessoasRouter,
   manejo: manejoRouter,
   semen: semenRouter,
+  acesso: acessoRouter,
 });
 export type AppRouter = typeof appRouter;

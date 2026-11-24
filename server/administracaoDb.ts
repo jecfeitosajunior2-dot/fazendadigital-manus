@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import bcrypt from "bcryptjs";
 import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from "mysql2/promise";
 import type { IdentidadeUsuario, PapelConta, SituacaoUsuario } from "./_core/identidadeSessao";
 import { montarAcesso, type FazendaConhecida, type VinculoFazenda } from "./acessoFazendas";
@@ -11,6 +12,7 @@ import {
   planejarConjuntoPermissoes,
   planejarCriacaoPerfil,
   planejarCriacaoUsuario,
+  planejarDefinicaoSenha,
   planejarEdicaoPerfil,
   planejarEdicaoUsuario,
   planejarInativacaoPerfil,
@@ -397,14 +399,35 @@ function mesmoEstado(salvo: EstadoGuardado, vivo: EstadoGuardado): boolean {
     && salvo.fazendas.join("\0") === vivo.fazendas.join("\0");
 }
 
-export function criarAdministracaoDb(pool: Pool, alvo: AlvoMysql) {
-  afirmarBancoDescartavel(alvo);
+export function criarAdministracaoDaAplicacao(pool: Pool) {
+  return criarAdministracaoDb(pool, { host: "127.0.0.1", port: 9, database: "aplicacao" }, "aplicacao");
+}
+
+export function criarAdministracaoDb(
+  pool: Pool,
+  alvo: AlvoMysql,
+  modo: "descartavel" | "aplicacao" = "descartavel",
+) {
+  if (modo === "descartavel") afirmarBancoDescartavel(alvo);
+
+  async function conferirConexao(conn: PoolConnection): Promise<void> {
+    if (modo === "descartavel") {
+      afirmarBancoDescartavel(alvo);
+      await conferirBanco(conn, alvo);
+      return;
+    }
+    const [linhas] = await conn.query<RowDataPacket[]>("SELECT DATABASE() AS nome");
+    const nome = String(linhas[0]?.nome ?? "").toLowerCase();
+    if (!nome || nome === "fazenda_digital") {
+      throw new Error("Conexão recusada: banco operacional.");
+    }
+  }
 
   async function emTransacao<T>(trabalho: (conn: PoolConnection) => Promise<T>): Promise<T | FalhaPersistencia> {
-    afirmarBancoDescartavel(alvo);
+    if (modo === "descartavel") afirmarBancoDescartavel(alvo);
     const conn = await pool.getConnection();
     try {
-      await conferirBanco(conn, alvo);
+      await conferirConexao(conn);
       await conn.query("SET TRANSACTION ISOLATION LEVEL READ COMMITTED");
       await conn.beginTransaction();
       return await concluirTransacao({
@@ -550,6 +573,31 @@ export function criarAdministracaoDb(pool: Pool, alvo: AlvoMysql) {
         };
         await finalizar(conn, ctx.identidade, plano.plano.sessao, entradaAuditoria, ganchos);
         return { ok: true as const, id: resultado.insertId };
+      });
+    },
+
+    async definirSenhaAcesso(
+      executorId: number,
+      alvoId: number,
+      senha: string,
+      ganchos?: GanchosPersistencia,
+    ): Promise<Ok | FalhaPersistencia> {
+      if (typeof senha !== "string" || senha.length < 8 || senha.length > 80) {
+        return { ok: false, motivo: "senha_invalida" };
+      }
+      const hash = await bcrypt.hash(senha, 10);
+      return emTransacao(async (conn) => {
+        const { ctx, usuario, identidade } = await preparar(conn, executorId, alvoId, ganchos);
+        const plano = planejarDefinicaoSenha(ctx, usuario, true);
+        if (!plano.ok) recusar(plano.motivo, plano);
+        const [resultado] = await conn.query<ResultSetHeader>(
+          `UPDATE users SET passwordHash = ?
+           WHERE id = ? AND sessionVersion = ? AND titularUserId = ? AND situacao = 'ativo'`,
+          [hash, alvoId, usuario.sessionVersion, usuario.titularUserId],
+        );
+        if (resultado.affectedRows !== 1) recusar("conflito");
+        await finalizar(conn, identidade, plano.plano.sessao, plano.plano.auditoria.entrada, ganchos);
+        return { ok: true as const };
       });
     },
 

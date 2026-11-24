@@ -750,9 +750,23 @@ describe("sessão, auditoria e compatibilidade", () => {
     const roteador = readFileSync(resolve(here, "routers.ts"), "utf8");
     const manejo = readFileSync(resolve(here, "manejoContexto.ts"), "utf8");
     const fonte = readFileSync(resolve(here, "administracao.ts"), "utf8");
-    expect(roteador.includes("administracao")).toBe(false);
+    expect(roteador.includes("administracaoDb")).toBe(false);
+    expect(roteador.includes("acessoRouter")).toBe(true);
+    const porta = readFileSync(resolve(here, "acessoContaRouter.ts"), "utf8");
+    expect(porta.includes("ctx.user.id")).toBe(true);
+    expect(porta.includes("executorId")).toBe(false);
+    expect(porta.includes("titularUserId")).toBe(false);
     expect(manejo.includes("administracao")).toBe(false);
     expect(fonte.includes("./db")).toBe(false);
     expect(fonte.includes("routers")).toBe(false);
+  });
+
+  it("a tela lê o botão clicado e a movimentação envia a chave", () => {
+    const acessos = readFileSync(resolve(here, "../client/src/pages/AcessoContaPage.tsx"), "utf8");
+    const movimento = readFileSync(resolve(here, "../client/src/pages/InsumosNovaMovimentacaoPage.tsx"), "utf8");
+    expect(acessos.includes("submitter")).toBe(true);
+    expect(acessos.includes("dados.get(\"acao\")")).toBe(false);
+    expect(movimento.includes("chaveDaLinha")).toBe(true);
+    expect(movimento.includes("chave: chaveDaLinha")).toBe(true);
   });
 });

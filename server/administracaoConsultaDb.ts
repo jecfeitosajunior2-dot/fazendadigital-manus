@@ -160,15 +160,23 @@ function eventoVisivel(linha: RowDataPacket): EventoAdministrativoVisivel {
   };
 }
 
-export function criarConsultasAdministrativas(pool: Pool, alvo: AlvoMysql) {
-  afirmarBancoDescartavel(alvo);
+export function criarConsultasDaAplicacao(pool: Pool) {
+  return criarConsultasAdministrativas(pool, { host: "127.0.0.1", port: 9, database: "aplicacao" }, "aplicacao");
+}
+
+export function criarConsultasAdministrativas(
+  pool: Pool,
+  alvo: AlvoMysql,
+  modo: "descartavel" | "aplicacao" = "descartavel",
+) {
+  if (modo === "descartavel") afirmarBancoDescartavel(alvo);
 
   async function ler<T extends RowDataPacket[]>(sql: string, params: readonly unknown[] = []): Promise<T> {
-    afirmarBancoDescartavel(alvo);
+    if (modo === "descartavel") afirmarBancoDescartavel(alvo);
     afirmarSqlDeLeitura(sql);
     const [banco] = await pool.query<RowDataPacket[]>("SELECT DATABASE() AS nome");
     const nome = String(banco[0]?.nome ?? "");
-    if (nome.toLowerCase() !== alvo.database.toLowerCase() || nome.toLowerCase() === "fazenda_digital") {
+    if (nome.toLowerCase() === "fazenda_digital" || (modo === "descartavel" && nome.toLowerCase() !== alvo.database.toLowerCase())) {
       throw new Error("Conexão recusada: banco inesperado.");
     }
     const [linhas] = await pool.query<T>(sql, params as unknown[]);

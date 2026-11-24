@@ -1285,6 +1285,16 @@ export default function InsumosNovaMovimentacaoPage() {
       ? crypto.randomUUID().replace(/-/g, "")
       : `tr${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`,
   );
+  const chavesMovimentoRef = useRef(new Map<string, string>());
+  const chaveDaLinha = (localId: string) => {
+    const existente = chavesMovimentoRef.current.get(localId);
+    if (existente) return existente;
+    const nova = typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? `mov-${crypto.randomUUID()}`
+      : `mov-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+    chavesMovimentoRef.current.set(localId, nova);
+    return nova;
+  };
   const updateMutation = trpc.estoque.updateMovimentacao.useMutation({
     onError: e => definirErroItens(e.message),
   });
@@ -1463,7 +1473,10 @@ export default function InsumosNovaMovimentacaoPage() {
           if (p.movimentacaoId) {
             await updateMutation.mutateAsync({ id: p.movimentacaoId, ...prepararPayload(p, sinal, rateio, grupoId) });
           } else {
-            await createMutation.mutateAsync(prepararPayload(p, sinal, rateio, grupoId));
+            await createMutation.mutateAsync({
+              ...prepararPayload(p, sinal, rateio, grupoId),
+              chave: chaveDaLinha(p.localId),
+            });
           }
         }
         const novos = linhas.filter(p => !p.movimentacaoId).length;
@@ -1533,7 +1546,10 @@ export default function InsumosNovaMovimentacaoPage() {
       }
 
       for (const p of linhas) {
-        await createMutation.mutateAsync(prepararPayload(p, sinal, rateio, grupoId));
+        await createMutation.mutateAsync({
+          ...prepararPayload(p, sinal, rateio, grupoId),
+          chave: chaveDaLinha(p.localId),
+        });
       }
       toast.success(
         retornoEhManutencao

@@ -8,6 +8,7 @@ import { CattleProvider } from "./contexts/CattleContext";
 import { NotificationProvider } from "./contexts/NotificationContext";
 import { AuthGuard, AppShell } from "./components/AppLayout";
 import LoginPage from "./pages/LoginPage";
+import AcessoContaPage from "./pages/AcessoContaPage";
 import DashboardPage from "./pages/DashboardPage";
 import { AnimaisPage, EstoquePage } from "./pages/GenericPage";
 import SubdivisoesPage from "./pages/SubdivisoesPage";
@@ -110,6 +111,7 @@ function ProtectedRoutes() {
   return (
     <Switch>
       <Route path="/admin/overview" component={DashboardPage} />
+      <Route path="/conta/acessos" component={AcessoContaPage} />
 
       {/* Quick Access */}
       <Route path="/primeiro-uso/help" component={QuickAccessPage} />

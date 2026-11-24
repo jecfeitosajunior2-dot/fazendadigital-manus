@@ -69,7 +69,9 @@ export type MotivoAdministracao =
   | "proposta_duplicada"
   | "irregular_mantida"
   | "saneamento_recusado"
-  | "revisao_outro_executor";
+  | "revisao_outro_executor"
+  | "senha_invalida"
+  | "senha_ausente";
 
 export type ContextoAdministracao = {
   identidade: IdentidadeUsuario;
@@ -401,6 +403,24 @@ export function planejarCriacaoUsuario(
     sessionVersionAtual: null,
     sessionVersionPrevista: 0,
   }, null, usuario, { usuario });
+}
+
+/** A senha não entra no plano. Quem chama grava só o hash e invalida a sessão do alvo. */
+export function planejarDefinicaoSenha(
+  ctx: ContextoAdministracao,
+  usuario: UsuarioAdministravel,
+  senhaInformada: boolean,
+): Ok<PlanoBase & { acessoPreparado: true }> | FalhaAdministracao {
+  const alvo = exigirAlvo(ctx, usuario, "usuarios.criar");
+  if (alvo) return alvo;
+  const ativo = exigirAtivo(usuario);
+  if (ativo) return ativo;
+  if (!senhaInformada) return falha("senha_ausente");
+  const sessao = sessaoDoAlvo("usuario.alterar_senha", usuario);
+  if (!sessao) return falha("alvo_invalido");
+  return fecharPlano(ctx, "usuario.alterar_senha", "users", usuario.id, null, sessao, null, {
+    acessoPreparado: true,
+  }, { acessoPreparado: true as const });
 }
 
 export function planejarEdicaoUsuario(
