@@ -21,8 +21,6 @@ import {
   AdministrativeOverviewPage,
   PurchasesPage,
   SalesPage,
-  SimulationsFeedlotPage,
-  SimulationsSemiFeedlotPage,
 } from "./pages/ModulePages";
 import CompraVendaVisaoGeralPage from "./pages/CompraVendaVisaoGeralPage";
 import { COMPRA_VENDA_COMPRADORES_LEGADO_PATH, FINANCEIRO_PESSOAS_PATH } from "./lib/pessoasListagem";
@@ -251,10 +249,9 @@ function ProtectedRoutes() {
       <Route path="/relatorios/reprodutivos" component={RedirectPainelControle} />
       <Route path="/relatorios/operacionais" component={RedirectPainelControle} />
 
-      {/* Simulations */}
-      <Route path="/simulacoes/visao-geral" component={SimulationsFeedlotPage} />
-      <Route path="/simulacoes/confinamento" component={SimulationsFeedlotPage} />
-      <Route path="/simulacoes/semi-confinamento" component={SimulationsSemiFeedlotPage} />
+      <Route path="/simulacoes/visao-geral" component={RedirectPainelControle} />
+      <Route path="/simulacoes/confinamento" component={RedirectPainelControle} />
+      <Route path="/simulacoes/semi-confinamento" component={RedirectPainelControle} />
 
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />

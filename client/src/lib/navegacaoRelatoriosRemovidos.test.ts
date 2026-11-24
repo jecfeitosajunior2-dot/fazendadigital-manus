@@ -47,8 +47,30 @@ describe("Fase 5.2A — Relatórios independentes fora de circulação", () => {
       "Compra e Venda",
       "Financeiro",
       "Administrativo",
-      "Simulações",
     ]);
+    expect(menuItems.map(item => item.label)).not.toContain("Simulações");
+    const caminhos = menuItems.flatMap(item => [
+      item.path,
+      ...(item.children?.map(filho => filho.path) ?? []),
+    ]);
+    expect(caminhos).not.toContain("/simulacoes/visao-geral");
+    expect(caminhos).not.toContain("/simulacoes/confinamento");
+    expect(caminhos).not.toContain("/simulacoes/semi-confinamento");
+  });
+
+  it("as URLs de simulação voltam ao Painel e a página fica no código", () => {
+    for (const rota of [
+      "/simulacoes/visao-geral",
+      "/simulacoes/confinamento",
+      "/simulacoes/semi-confinamento",
+    ]) {
+      const bloco = app.slice(app.indexOf(`path="${rota}"`), app.indexOf(`path="${rota}"`) + 90);
+      expect(bloco).toContain("RedirectPainelControle");
+      expect(bloco).not.toContain("Simulations");
+    }
+    const paginas = readFileSync(resolve(here, "../pages/ModulePages.tsx"), "utf8");
+    expect(paginas).toContain("export function SimulationsFeedlotPage");
+    expect(paginas).toContain("export function SimulationsSemiFeedlotPage");
   });
 
   it("as cinco URLs antigas redirecionam ao Painel, sem montar a página fictícia", () => {

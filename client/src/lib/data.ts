@@ -103,15 +103,6 @@ export const menuItems: MenuItem[] = [
       { label: "Benfeitorias", icon: "", path: "/fazendas/benfeitorias" },
     ],
   },
-  {
-    label: "Simulações",
-    icon: "calculate",
-    children: [
-      { label: "Visão Geral", icon: "", path: "/simulacoes/visao-geral" },
-      { label: "Confinamento", icon: "", path: "/simulacoes/confinamento" },
-      { label: "Semi-confinamento", icon: "", path: "/simulacoes/semi-confinamento" },
-    ],
-  },
 ];
 
 // Dashboard KPIs
