@@ -35,7 +35,6 @@ describe("Fase 5.2A — Relatórios independentes fora de circulação", () => {
     expect(menuItems.map(item => item.label)).toEqual([
       "Painel de Controle",
       "Minha conta",
-      "Acessos da conta",
       "Acesso Rápido",
       "Fazendas",
       "Rebanho",

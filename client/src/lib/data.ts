@@ -9,7 +9,6 @@ export interface MenuItem {
 export const menuItems: MenuItem[] = [
   { label: "Painel de Controle", icon: "fd_panel_chart", path: "/admin/overview" },
   { label: "Minha conta", icon: "fd_panel_chart", path: "/conta/minha" },
-  { label: "Acessos da conta", icon: "fd_panel_chart", path: "/conta/acessos" },
   { label: "Acesso Rápido", icon: "fd_rocket", path: "/primeiro-uso/help" },
   {
     label: "Fazendas",
@@ -99,8 +98,11 @@ export const menuItems: MenuItem[] = [
     label: "Administrativo",
     icon: "fd_admin_gear_check",
     children: [
-      { label: "Visão Geral", icon: "", path: "/administrativo/visao-geral" },
-      { label: "Benfeitorias", icon: "", path: "/fazendas/benfeitorias" },
+      { label: "Fazendas", icon: "", path: "/fazendas/lista-fazendas" },
+      { label: "Pessoas e Empresas", icon: "", path: "/financeiro/pessoas" },
+      { label: "Categorias Financeiras", icon: "", path: "/administrativo/categorias-financeiras" },
+      { label: "Centro de Custos", icon: "", path: "/administrativo/centros-de-custos" },
+      { label: "Usuários e Acessos", icon: "", path: "/conta/acessos" },
     ],
   },
 ];

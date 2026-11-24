@@ -18,7 +18,6 @@ import {
   FarmsListPage,
   HerdOverviewPage,
   QuickAccessPage,
-  AdministrativeOverviewPage,
   PurchasesPage,
   SalesPage,
 } from "./pages/ModulePages";
@@ -91,6 +90,7 @@ import ManutencaoFormPage from "./pages/ManutencaoFormPage";
 import SemenEstoquePage from "./pages/SemenEstoquePage";
 import SemenUtilizadoPage from "./pages/SemenUtilizadoPage";
 import SemenEntradaResumoPage from "./pages/SemenEntradaResumoPage";
+import { CategoriasFinanceirasPendentePage, CentrosCustoPendentePage } from "./pages/AdministrativoPendentePage";
 import { MANEJO_REPRODUTIVO_PATH } from "./const";
 import { SEMEN_CADASTRO_PATH, SEMEN_ESTOQUE_PATH, SEMEN_UTILIZADO_PATH } from "./lib/semenRoutes";
 
@@ -104,6 +104,10 @@ function RedirectReproducaoLegado() {
 
 function RedirectPainelControle() {
   return <Redirect to="/admin/overview" replace />;
+}
+
+function RedirectAdministrativoFazendas() {
+  return <Redirect to="/fazendas/lista-fazendas" replace />;
 }
 
 function ProtectedRoutes() {
@@ -125,7 +129,9 @@ function ProtectedRoutes() {
       <Route path="/fazendas/subdivisoes" component={SubdivisoesPage} />
 
       {/* Administrativo */}
-      <Route path="/administrativo/visao-geral" component={AdministrativeOverviewPage} />
+      <Route path="/administrativo/visao-geral" component={RedirectAdministrativoFazendas} />
+      <Route path="/administrativo/categorias-financeiras" component={CategoriasFinanceirasPendentePage} />
+      <Route path="/administrativo/centros-de-custos" component={CentrosCustoPendentePage} />
       <Route path="/benfeitorias/visao-geral" component={() => <RedirectTo to="/fazendas/benfeitorias" />} />
       <Route path="/benfeitorias/lista-benfeitorias" component={() => <RedirectTo to="/fazendas/benfeitorias" />} />
 
