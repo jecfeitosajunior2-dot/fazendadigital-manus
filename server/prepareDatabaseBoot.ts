@@ -1,8 +1,10 @@
 import { createMysqlPool } from "./_core/mysqlPool";
+import { questoesDasPecas, verificarPecasProposta } from "./prontidaoDefinitiva";
 import {
   DatabaseSchemaIncompatibleError,
   assertReadOnlySelectSql,
   verifyDatabaseSchema,
+  type SchemaIssue,
   type SchemaQuery,
   type VerifyDatabaseSchemaResult,
 } from "./verifyDatabaseSchema";
@@ -71,6 +73,19 @@ export async function prepareDatabaseForBoot(
         console.error("[schema]", issue.message);
       }
       throw new DatabaseSchemaIncompatibleError(result);
+    }
+    if (process.env.FD_PRONTIDAO_DEFINITIVA === "1" && !deps.verify) {
+      const pecas = await verificarPecasProposta(session.query);
+      if (!pecas.ok) {
+        const issues: SchemaIssue[] = questoesDasPecas(pecas.faltas);
+        for (const issue of issues) console.error("[schema]", issue.message);
+        throw new DatabaseSchemaIncompatibleError({
+          ok: false,
+          schemaName: result.schemaName,
+          issues,
+        });
+      }
+      console.log("[schema] Prontidão definitiva confirmada. Nenhuma alteração aplicada.");
     }
     console.log(`[schema] Compatível (${result.schemaName ?? "mysql"}). Nenhuma alteração aplicada.`);
     return "mysql";

@@ -11,7 +11,7 @@
     "check": "tsc --noEmit",
     "format": "prettier --write .",
     "db:up": "docker compose up -d mysql",
-    "db:push": "drizzle-kit push",
+    "db:push": "tsx scripts/db-push-seguro.ts",
     "db:ensure-schema": "tsx scripts/ensure-schema.ts",
     "db:seed": "tsx scripts/seed.ts && tsx scripts/seed-manus-data.ts",
     "db:seed:manus": "tsx scripts/seed-manus-data.ts",
