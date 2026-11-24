@@ -13,7 +13,7 @@ import {
 import { criarMovimentacaoEstoqueNoTx } from "./estoqueMovimentacaoTx";
 import { persistirCapital } from "../shared/estoqueCapital";
 
-const harness = await openFinanceiroMysqlHarness();
+const harness = await openFinanceiroMysqlHarness("capital");
 
 async function seedProduto(fazendaId: number, opts: {
   nome: string;
@@ -45,7 +45,7 @@ async function seedProduto(fazendaId: number, opts: {
   return Number(rows[0]?.id);
 }
 
-describe.skipIf(!harness)("estoqueCapital — MySQL isolado", () => {
+describe("estoqueCapital — MySQL isolado", () => {
   const h = () => harness!;
   let fazendaA1: number;
 

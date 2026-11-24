@@ -5,8 +5,10 @@ import {
   FIN_USER_A,
   FIN_USER_B,
   fazendaIdDe,
+  escopoTitularFinanceiro,
   legadoIntacto,
   openFinanceiroMysqlHarness,
+  semearLegadoSintetico,
   pessoaIdDe,
   resetFinanceiroMysqlHarness,
   seedFinanceiroMysqlUsers,
@@ -16,7 +18,7 @@ import { createCompraInsumosMysqlStore } from "./compraInsumosMysql";
 import { FINANCEIRO_ORIGEM_COMPRA_INSUMOS, MSG_COMPRA_ESTORNO_COM_PAGAMENTO } from "../shared/compraInsumos";
 import { createFinanceiroNucleoService } from "./financeiroNucleo";
 
-const harness = await openFinanceiroMysqlHarness();
+const harness = await openFinanceiroMysqlHarness("compra");
 
 async function seedEstoque(fazendaId: number, nome: string, qtd = "100.00", controla = true) {
   await harness!.pool.query(
@@ -31,7 +33,7 @@ async function seedEstoque(fazendaId: number, nome: string, qtd = "100.00", cont
   return Number(rows[0]?.id);
 }
 
-describe.skipIf(!harness)("compraInsumos — MySQL isolado", () => {
+describe("compraInsumos — MySQL isolado", () => {
   const h = () => harness!;
   let pessoaA: number;
   let pessoaB: number;
@@ -46,6 +48,7 @@ describe.skipIf(!harness)("compraInsumos — MySQL isolado", () => {
   beforeAll(async () => {
     await resetFinanceiroMysqlHarness(h());
     await seedFinanceiroMysqlUsers(h());
+    await semearLegadoSintetico(h());
   });
 
   beforeEach(async () => {
@@ -252,7 +255,7 @@ describe.skipIf(!harness)("compraInsumos — MySQL isolado", () => {
     await fin.definirParcelas(FIN_USER_A, tituloId, [
       { numero: 1, vencimento: "2026-11-01", valorOriginal: 200 },
     ]);
-    const det = await fin.detalheTitulo(FIN_USER_A, tituloId);
+    const det = await fin.detalheTitulo(FIN_USER_A, tituloId, escopoTitularFinanceiro(FIN_USER_A));
     const parcelaId = Number(det.parcelas[0]?.id);
     await fin.criarPagamento(FIN_USER_A, {
       contaId: conta.id,

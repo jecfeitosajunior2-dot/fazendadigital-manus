@@ -4,8 +4,10 @@ import {
   FIN_USER_A,
   FIN_USER_B,
   fazendaIdDe,
+  escopoTitularFinanceiro,
   legadoIntacto,
   openFinanceiroMysqlHarness,
+  semearLegadoSintetico,
   pessoaIdDe,
   resetFinanceiroMysqlHarness,
   seedFinanceiroMysqlUsers,
@@ -17,9 +19,9 @@ import {
   MSG_FIN_OVERPAYMENT,
 } from "../shared/financeiroNucleo";
 
-const harness = await openFinanceiroMysqlHarness();
+const harness = await openFinanceiroMysqlHarness("financeiro");
 
-describe.skipIf(!harness)("financeiroNucleo — MySQL isolado", () => {
+describe("financeiroNucleo — MySQL isolado", () => {
   const h = () => harness!;
   let pessoaA: number;
   let pessoaB: number;
@@ -29,6 +31,7 @@ describe.skipIf(!harness)("financeiroNucleo — MySQL isolado", () => {
   beforeAll(async () => {
     await resetFinanceiroMysqlHarness(h());
     await seedFinanceiroMysqlUsers(h());
+    await semearLegadoSintetico(h());
     pessoaA = await pessoaIdDe(h(), FIN_USER_A, "Fornecedor A");
     pessoaB = await pessoaIdDe(h(), FIN_USER_B, "Fornecedor B");
     fazendaA1 = await fazendaIdDe(h(), FIN_USER_A, "Fazenda A1");
@@ -93,7 +96,7 @@ describe.skipIf(!harness)("financeiroNucleo — MySQL isolado", () => {
   it("C — pagamento cria liquidação + alocação + 1 movimento", async () => {
     const conta = await contaCaixa();
     const titulo = await tituloPagar(10000, [{ numero: 1, vencimento: "2026-11-01", valorOriginal: 10000 }]);
-    const d = await h().service.detalheTitulo(FIN_USER_A, titulo.id);
+    const d = await h().service.detalheTitulo(FIN_USER_A, titulo.id, escopoTitularFinanceiro(FIN_USER_A));
     const pag = await h().service.criarPagamento(FIN_USER_A, {
       contaId: conta.id,
       dataLiquidacao: "2026-10-15",
@@ -119,7 +122,7 @@ describe.skipIf(!harness)("financeiroNucleo — MySQL isolado", () => {
   it("D — rollback não deixa registro parcial", async () => {
     const conta = await contaCaixa();
     const titulo = await tituloPagar(10000, [{ numero: 1, vencimento: "2026-11-01", valorOriginal: 10000 }]);
-    const d = await h().service.detalheTitulo(FIN_USER_A, titulo.id);
+    const d = await h().service.detalheTitulo(FIN_USER_A, titulo.id, escopoTitularFinanceiro(FIN_USER_A));
     const wrapped: FinanceiroNucleoStore = {
       transaction(fn) {
         return h().store.transaction(async tx => {
@@ -156,7 +159,7 @@ describe.skipIf(!harness)("financeiroNucleo — MySQL isolado", () => {
   it("E — pagamento parcial", async () => {
     const conta = await contaCaixa();
     const titulo = await tituloPagar(10000, [{ numero: 1, vencimento: "2026-11-01", valorOriginal: 10000 }]);
-    const d = await h().service.detalheTitulo(FIN_USER_A, titulo.id);
+    const d = await h().service.detalheTitulo(FIN_USER_A, titulo.id, escopoTitularFinanceiro(FIN_USER_A));
     await h().service.criarPagamento(FIN_USER_A, {
       contaId: conta.id,
       dataLiquidacao: "2026-10-15",
@@ -164,14 +167,14 @@ describe.skipIf(!harness)("financeiroNucleo — MySQL isolado", () => {
       idempotencyKey: "mysql-e",
       alocacoes: [{ parcelaId: d.parcelas[0]!.id, principalLiquidado: 4000 }],
     });
-    const depois = await h().service.detalheTitulo(FIN_USER_A, titulo.id);
+    const depois = await h().service.detalheTitulo(FIN_USER_A, titulo.id, escopoTitularFinanceiro(FIN_USER_A));
     expect(depois.parcelas[0]!.saldoPrincipal).toBe(6000);
   });
 
   it("F — pagamento com desconto", async () => {
     const conta = await contaCaixa();
     const titulo = await tituloPagar(10000, [{ numero: 1, vencimento: "2026-11-01", valorOriginal: 10000 }]);
-    const d = await h().service.detalheTitulo(FIN_USER_A, titulo.id);
+    const d = await h().service.detalheTitulo(FIN_USER_A, titulo.id, escopoTitularFinanceiro(FIN_USER_A));
     await h().service.criarPagamento(FIN_USER_A, {
       contaId: conta.id,
       dataLiquidacao: "2026-10-15",
@@ -179,14 +182,14 @@ describe.skipIf(!harness)("financeiroNucleo — MySQL isolado", () => {
       idempotencyKey: "mysql-f",
       alocacoes: [{ parcelaId: d.parcelas[0]!.id, principalLiquidado: 10000, desconto: 200 }],
     });
-    const depois = await h().service.detalheTitulo(FIN_USER_A, titulo.id);
+    const depois = await h().service.detalheTitulo(FIN_USER_A, titulo.id, escopoTitularFinanceiro(FIN_USER_A));
     expect(depois.parcelas[0]!.quitada).toBe(true);
   });
 
   it("G — pagamento com juros gera saída 10.200", async () => {
     const conta = await contaCaixa();
     const titulo = await tituloPagar(10000, [{ numero: 1, vencimento: "2026-11-01", valorOriginal: 10000 }]);
-    const d = await h().service.detalheTitulo(FIN_USER_A, titulo.id);
+    const d = await h().service.detalheTitulo(FIN_USER_A, titulo.id, escopoTitularFinanceiro(FIN_USER_A));
     const pag = await h().service.criarPagamento(FIN_USER_A, {
       contaId: conta.id,
       dataLiquidacao: "2026-10-15",
@@ -208,7 +211,7 @@ describe.skipIf(!harness)("financeiroNucleo — MySQL isolado", () => {
       { numero: 1, vencimento: "2026-11-01", valorOriginal: 10000 },
       { numero: 2, vencimento: "2026-12-01", valorOriginal: 15000 },
     ]);
-    const d = await h().service.detalheTitulo(FIN_USER_A, titulo.id);
+    const d = await h().service.detalheTitulo(FIN_USER_A, titulo.id, escopoTitularFinanceiro(FIN_USER_A));
     const pag = await h().service.criarPagamento(FIN_USER_A, {
       contaId: conta.id,
       dataLiquidacao: "2026-10-15",
@@ -229,7 +232,7 @@ describe.skipIf(!harness)("financeiroNucleo — MySQL isolado", () => {
   it("I — retry com mesma idempotency_key", async () => {
     const conta = await contaCaixa();
     const titulo = await tituloPagar(4000, [{ numero: 1, vencimento: "2026-11-01", valorOriginal: 4000 }]);
-    const d = await h().service.detalheTitulo(FIN_USER_A, titulo.id);
+    const d = await h().service.detalheTitulo(FIN_USER_A, titulo.id, escopoTitularFinanceiro(FIN_USER_A));
     const cmd = {
       contaId: conta.id,
       dataLiquidacao: "2026-10-15",
@@ -248,7 +251,7 @@ describe.skipIf(!harness)("financeiroNucleo — MySQL isolado", () => {
   it("J — overpayment falha", async () => {
     const conta = await contaCaixa();
     const titulo = await tituloPagar(10000, [{ numero: 1, vencimento: "2026-11-01", valorOriginal: 10000 }]);
-    const d = await h().service.detalheTitulo(FIN_USER_A, titulo.id);
+    const d = await h().service.detalheTitulo(FIN_USER_A, titulo.id, escopoTitularFinanceiro(FIN_USER_A));
     await expect(h().service.criarPagamento(FIN_USER_A, {
       contaId: conta.id,
       dataLiquidacao: "2026-10-15",
@@ -306,7 +309,7 @@ describe.skipIf(!harness)("financeiroNucleo — MySQL isolado", () => {
   it("M — estorno integral de pagamento com juros", async () => {
     const conta = await contaCaixa();
     const titulo = await tituloPagar(10000, [{ numero: 1, vencimento: "2026-11-01", valorOriginal: 10000 }]);
-    const d = await h().service.detalheTitulo(FIN_USER_A, titulo.id);
+    const d = await h().service.detalheTitulo(FIN_USER_A, titulo.id, escopoTitularFinanceiro(FIN_USER_A));
     const pag = await h().service.criarPagamento(FIN_USER_A, {
       contaId: conta.id,
       dataLiquidacao: "2026-10-15",
@@ -335,14 +338,14 @@ describe.skipIf(!harness)("financeiroNucleo — MySQL isolado", () => {
     expect(movs[0]?.direcao).toBe("saida");
     expect(movs[1]?.direcao).toBe("entrada");
     expect(Number(movs[1]?.valor)).toBe(10200);
-    const depois = await h().service.detalheTitulo(FIN_USER_A, titulo.id);
+    const depois = await h().service.detalheTitulo(FIN_USER_A, titulo.id, escopoTitularFinanceiro(FIN_USER_A));
     expect(depois.parcelas[0]!.saldoPrincipal).toBe(10000);
   });
 
   it("N — segundo estorno integral falha", async () => {
     const conta = await contaCaixa();
     const titulo = await tituloPagar(1000, [{ numero: 1, vencimento: "2026-11-01", valorOriginal: 1000 }]);
-    const d = await h().service.detalheTitulo(FIN_USER_A, titulo.id);
+    const d = await h().service.detalheTitulo(FIN_USER_A, titulo.id, escopoTitularFinanceiro(FIN_USER_A));
     const pag = await h().service.criarPagamento(FIN_USER_A, {
       contaId: conta.id,
       dataLiquidacao: "2026-10-15",
@@ -458,7 +461,7 @@ describe.skipIf(!harness)("financeiroNucleo — MySQL isolado", () => {
   it("data anterior à abertura é recusada no MySQL", async () => {
     const conta = await contaCaixa(50000, "2026-10-01");
     const titulo = await tituloPagar(1000, [{ numero: 1, vencimento: "2026-09-30", valorOriginal: 1000 }]);
-    const d = await h().service.detalheTitulo(FIN_USER_A, titulo.id);
+    const d = await h().service.detalheTitulo(FIN_USER_A, titulo.id, escopoTitularFinanceiro(FIN_USER_A));
     await expect(h().service.criarPagamento(FIN_USER_A, {
       contaId: conta.id,
       dataLiquidacao: "2026-09-30",
@@ -480,7 +483,7 @@ describe.skipIf(!harness)("financeiroNucleo — MySQL isolado", () => {
   it("concorrência: duas liquidações de 10.000 na mesma parcela", async () => {
     const conta = await contaCaixa();
     const titulo = await tituloPagar(10000, [{ numero: 1, vencimento: "2026-11-01", valorOriginal: 10000 }]);
-    const d = await h().service.detalheTitulo(FIN_USER_A, titulo.id);
+    const d = await h().service.detalheTitulo(FIN_USER_A, titulo.id, escopoTitularFinanceiro(FIN_USER_A));
     const parcelaId = d.parcelas[0]!.id;
     const resultados = await Promise.allSettled([
       h().service.criarPagamento(FIN_USER_A, {
@@ -511,15 +514,68 @@ describe.skipIf(!harness)("financeiroNucleo — MySQL isolado", () => {
     expect(Number(liqs[0]?.n)).toBe(1);
     expect(Number(alocs[0]?.n)).toBe(1);
     expect(Number(movs[0]?.n)).toBe(1);
-    const depois = await h().service.detalheTitulo(FIN_USER_A, titulo.id);
+    const depois = await h().service.detalheTitulo(FIN_USER_A, titulo.id, escopoTitularFinanceiro(FIN_USER_A));
     expect(depois.parcelas[0]!.saldoPrincipal).toBe(0);
+  });
+
+  it("consulta de outro titular não revela o título", async () => {
+    const titulo = await tituloPagar(10000, [{ numero: 1, vencimento: "2026-11-01", valorOriginal: 10000 }]);
+    await expect(
+      h().service.detalheTitulo(FIN_USER_A, titulo.id, escopoTitularFinanceiro(FIN_USER_B)),
+    ).rejects.toMatchObject({ code: "NOT_FOUND", message: "Registro não encontrado." });
+    const linhas = await h().query<{ n: number }[]>(
+      "SELECT COUNT(*) n FROM financeiro_titulos WHERE id = ? AND user_id = ?",
+      [titulo.id, FIN_USER_A],
+    );
+    expect(Number(linhas[0]?.n)).toBe(1);
+  });
+
+  it("sessão revogada não abre conta", async () => {
+    await h().pool.query(
+      `INSERT INTO users (id, openId, name, papel, situacao, sessionVersion, titularUserId)
+       VALUES (?, 'sint-titular-fin', 'Titular sintético', 'principal', 'ativo', 4, ?)`,
+      [FIN_USER_A, FIN_USER_A],
+    );
+    await expect(h().service.criarContaFinanceira(FIN_USER_A, {
+      nome: "Caixa revogada",
+      tipo: "caixa",
+      saldoAbertura: 10,
+      dataSaldoAbertura: "2026-10-01",
+    }, {
+      executorId: FIN_USER_A,
+      sessionVersionDaSessao: 1,
+      permissaoId: "financeiro.criar",
+    })).rejects.toMatchObject({ code: "UNAUTHORIZED", message: "Sessão inválida." });
+    const contas = await h().query<{ n: number }[]>(
+      "SELECT COUNT(*) n FROM financeiro_contas WHERE user_id = ? AND nome = 'Caixa revogada'",
+      [FIN_USER_A],
+    );
+    expect(Number(contas[0]?.n)).toBe(0);
+    await h().pool.query("DELETE FROM users WHERE id = ?", [FIN_USER_A]);
+  });
+
+  it("funcionário sem permissão não abre conta", async () => {
+    await h().pool.query(
+      `INSERT INTO users (id, openId, name, papel, situacao, sessionVersion, titularUserId) VALUES
+       (?, 'sint-titular-fin-b', 'Titular sintético', 'principal', 'ativo', 1, ?),
+       (?, 'sint-func-fin', 'Funcionário sintético', 'comum', 'ativo', 1, ?)`,
+      [FIN_USER_A, FIN_USER_A, FIN_USER_B, FIN_USER_A],
+    );
+    await expect(h().service.criarContaFinanceira(FIN_USER_A, {
+      nome: "Caixa sem permissão",
+      tipo: "caixa",
+      saldoAbertura: 10,
+      dataSaldoAbertura: "2026-10-01",
+    }, {
+      executorId: FIN_USER_B,
+      sessionVersionDaSessao: 1,
+      permissaoId: "financeiro.criar",
+    })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    const contas = await h().query<{ n: number }[]>(
+      "SELECT COUNT(*) n FROM financeiro_contas WHERE nome = 'Caixa sem permissão'",
+    );
+    expect(Number(contas[0]?.n)).toBe(0);
+    await h().pool.query("DELETE FROM users WHERE id IN (?, ?)", [FIN_USER_A, FIN_USER_B]);
   });
 });
 
-if (!harness) {
-  describe("financeiroNucleo — MySQL isolado", () => {
-    it("ambiente MySQL de teste indisponível — suíte isolada não executada", () => {
-      expect(harness).toBeNull();
-    });
-  });
-}

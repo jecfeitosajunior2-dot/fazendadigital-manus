@@ -21,7 +21,7 @@ import {
 import { criarManutencaoEstoqueTx } from "./manutencaoEstoqueMysql";
 import { ensureManutencaoEstoqueSchema } from "./ensureManutencaoEstoqueSchema";
 
-const harness = await openFinanceiroMysqlHarness();
+const harness = await openFinanceiroMysqlHarness("manutencao");
 
 async function seedProduto(
   fazendaId: number,
@@ -71,7 +71,7 @@ const pecaOficina = {
   valorTotal: 80,
 } as const;
 
-describe.skipIf(!harness)("manutencaoCompleta — MySQL isolado", () => {
+describe("manutencaoCompleta — MySQL isolado", () => {
   const h = () => harness!;
   let fazendaA1: number;
   let maquinaId: number;
@@ -443,10 +443,3 @@ describe.skipIf(!harness)("manutencaoCompleta — MySQL isolado", () => {
   });
 });
 
-if (!harness) {
-  describe("manutencaoCompleta — MySQL isolado", () => {
-    it("harness indisponível — testes MySQL omitidos", () => {
-      expect(harness).toBeNull();
-    });
-  });
-}

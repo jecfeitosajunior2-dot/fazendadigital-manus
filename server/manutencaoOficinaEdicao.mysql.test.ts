@@ -22,7 +22,7 @@ import { editarPecasOficinaNoTx } from "./manutencaoOficinaEdicao";
 import { criarEdicaoOficinaCtx } from "./manutencaoOficinaEdicaoMysql";
 import { ensureManutencaoEstoqueSchema } from "./ensureManutencaoEstoqueSchema";
 
-const harness = await openFinanceiroMysqlHarness();
+const harness = await openFinanceiroMysqlHarness("oficina");
 
 async function seedProduto(fazendaId: number) {
   await harness!.pool.query(
@@ -60,7 +60,7 @@ const pecaOficina = {
   valorTotal: 80,
 } as const;
 
-describe.skipIf(!harness)("manutencaoOficinaEdicao — MySQL isolado", () => {
+describe("manutencaoOficinaEdicao — MySQL isolado", () => {
   const h = () => harness!;
   let fazendaA1: number;
   let maquinaId: number;
@@ -327,10 +327,3 @@ describe.skipIf(!harness)("manutencaoOficinaEdicao — MySQL isolado", () => {
   });
 });
 
-if (!harness) {
-  describe("manutencaoOficinaEdicao — MySQL isolado", () => {
-    it("harness indisponível — testes MySQL omitidos", () => {
-      expect(harness).toBeNull();
-    });
-  });
-}

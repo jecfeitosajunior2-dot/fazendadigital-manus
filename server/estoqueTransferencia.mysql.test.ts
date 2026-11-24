@@ -1,4 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { drizzle } from "drizzle-orm/mysql2";
+import * as schema from "../drizzle/schema";
 import {
   FIN_USER_A,
   fazendaIdDe,
@@ -6,10 +8,10 @@ import {
   resetFinanceiroMysqlHarness,
   seedFinanceiroMysqlUsers,
 } from "./financeiroMysqlHarness";
-import { transferenciaInsumosService } from "./transferenciaInsumosMysql";
+import { criarTransferenciaInsumosMysqlService } from "./transferenciaInsumosMysql";
 import { persistirCapital } from "../shared/estoqueCapital";
 
-const harness = await openFinanceiroMysqlHarness();
+const harness = await openFinanceiroMysqlHarness("transferencia");
 
 async function seedProduto(fazendaId: number, opts: {
   nome: string;
@@ -33,8 +35,9 @@ async function seedProduto(fazendaId: number, opts: {
   return { id: Number(rows[0]?.id), produtoId: pid };
 }
 
-describe.skipIf(!harness)("transferência bilateral — MySQL isolado", () => {
+describe("transferência bilateral — MySQL isolado", () => {
   const h = () => harness!;
+  const servico = () => criarTransferenciaInsumosMysqlService(drizzle(h().pool, { schema, mode: "default" }));
   let fazendaA1: number;
   let fazendaA2: number;
 
@@ -64,7 +67,7 @@ describe.skipIf(!harness)("transferência bilateral — MySQL isolado", () => {
     await seedProduto(fazendaA2, {
       nome: "Sal transf A", qtd: "0.00", capital: "0.00", inicializado: true, produtoId: origem.produtoId,
     });
-    const r = await transferenciaInsumosService.confirmar(FIN_USER_A, "Tester", {
+    const r = await servico().confirmar(FIN_USER_A, "Tester", {
       idempotencyKey: `tr-a-${Date.now()}`,
       fazendaOrigemId: fazendaA1,
       fazendaDestinoId: fazendaA2,
@@ -92,7 +95,7 @@ describe.skipIf(!harness)("transferência bilateral — MySQL isolado", () => {
     await seedProduto(fazendaA2, {
       nome: "Sal transf B", qtd: "5.00", capital: "80.00", inicializado: true, produtoId: origem.produtoId,
     });
-    await transferenciaInsumosService.confirmar(FIN_USER_A, "Tester", {
+    await servico().confirmar(FIN_USER_A, "Tester", {
       idempotencyKey: `tr-b-${Date.now()}`,
       fazendaOrigemId: fazendaA1,
       fazendaDestinoId: fazendaA2,
@@ -121,8 +124,8 @@ describe.skipIf(!harness)("transferência bilateral — MySQL isolado", () => {
       dataOperacao: "2026-10-09",
       itens: [{ estoqueOrigemId: origem.id, quantidade: "3" }],
     };
-    const a = await transferenciaInsumosService.confirmar(FIN_USER_A, "Tester", cmd);
-    const b = await transferenciaInsumosService.confirmar(FIN_USER_A, "Tester", cmd);
+    const a = await servico().confirmar(FIN_USER_A, "Tester", cmd);
+    const b = await servico().confirmar(FIN_USER_A, "Tester", cmd);
     expect(a.id).toBe(b.id);
     expect(b.idempotent).toBe(true);
     const orig = await h().query<{ quantidade: string }[]>(
@@ -138,14 +141,14 @@ describe.skipIf(!harness)("transferência bilateral — MySQL isolado", () => {
     await seedProduto(fazendaA2, {
       nome: "Sal transf F", qtd: "5.00", capital: "80.00", inicializado: true, produtoId: origem.produtoId,
     });
-    const r = await transferenciaInsumosService.confirmar(FIN_USER_A, "Tester", {
+    const r = await servico().confirmar(FIN_USER_A, "Tester", {
       idempotencyKey: `tr-f-${Date.now()}`,
       fazendaOrigemId: fazendaA1,
       fazendaDestinoId: fazendaA2,
       dataOperacao: "2026-10-09",
       itens: [{ estoqueOrigemId: origem.id, quantidade: "3" }],
     });
-    await transferenciaInsumosService.estornar(FIN_USER_A, "Tester", r.id, "teste");
+    await servico().estornar(FIN_USER_A, "Tester", r.id, "teste");
     const orig = await h().query<{ quantidade: string; valor_total_estoque: string }[]>(
       `SELECT quantidade, valor_total_estoque FROM estoque WHERE id = ?`, [origem.id],
     );
@@ -163,7 +166,7 @@ describe.skipIf(!harness)("transferência bilateral — MySQL isolado", () => {
     const origem = await seedProduto(fazendaA1, {
       nome: "Sal transf D", qtd: "10.00", capital: "100.00", inicializado: true,
     });
-    await expect(transferenciaInsumosService.confirmar(FIN_USER_A, "Tester", {
+    await expect(servico().confirmar(FIN_USER_A, "Tester", {
       idempotencyKey: `tr-d-${Date.now()}`,
       fazendaOrigemId: fazendaA1,
       fazendaDestinoId: 999999,
@@ -179,7 +182,7 @@ describe.skipIf(!harness)("transferência bilateral — MySQL isolado", () => {
 
   it("estoque não inicializado permanece legado e capital real segue NULL", async () => {
     const origem = await seedProduto(fazendaA1, { nome: "Sal legado", qtd: "10.00" });
-    await transferenciaInsumosService.confirmar(FIN_USER_A, "Tester", {
+    await servico().confirmar(FIN_USER_A, "Tester", {
       idempotencyKey: `tr-leg-${Date.now()}`,
       fazendaOrigemId: fazendaA1,
       fazendaDestinoId: fazendaA2,

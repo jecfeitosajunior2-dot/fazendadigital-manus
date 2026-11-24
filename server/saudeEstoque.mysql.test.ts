@@ -15,7 +15,7 @@ import { criarSaudeEstoqueTx, recusarEstornoGenericoSeSanitario } from "./saudeE
 import { MSG_ESTORNO_GENERICO_SANITARIO } from "../shared/saudeEstoque";
 import { ensureSaudeEstoqueSchema } from "./ensureSaudeEstoqueSchema";
 
-const harness = await openFinanceiroMysqlHarness();
+const harness = await openFinanceiroMysqlHarness("saude");
 
 async function limparSaudeSintetica() {
   if (!harness) return;
@@ -51,7 +51,7 @@ async function seedAnimal(fazendaId: number) {
   return Number(rows[0]?.id);
 }
 
-describe.skipIf(!harness)("saudeEstoque — MySQL isolado", () => {
+describe("saudeEstoque — MySQL isolado", () => {
   const h = () => harness!;
   let fazendaA1: number;
   let animalId: number;

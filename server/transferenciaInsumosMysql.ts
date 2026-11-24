@@ -181,11 +181,15 @@ function criarTx(drizzleTx: Parameters<Parameters<typeof db.transaction>[0]>[0])
   return tx;
 }
 
-export const transferenciaInsumosService = createTransferenciaInsumosService({
-  transaction(fn) {
-    return db.transaction(async drizzleTx => fn(criarTx(drizzleTx))).catch((erro) => {
-      recusarSeDeadlockEstoque(erro);
-      throw erro;
-    });
-  },
-});
+export function criarTransferenciaInsumosMysqlService(banco: Pick<typeof db, "transaction"> = db) {
+  return createTransferenciaInsumosService({
+    transaction(fn) {
+      return banco.transaction(async drizzleTx => fn(criarTx(drizzleTx))).catch((erro) => {
+        recusarSeDeadlockEstoque(erro);
+        throw erro;
+      });
+    },
+  });
+}
+
+export const transferenciaInsumosService = criarTransferenciaInsumosMysqlService();
