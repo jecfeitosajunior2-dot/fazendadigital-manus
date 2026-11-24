@@ -178,6 +178,7 @@ export function FormNativeSelect({
   invalid,
   modal,
   itemClassName,
+  displayValue,
   "aria-describedby": ariaDescribedBy,
 }: {
   value: string;
@@ -194,6 +195,8 @@ export function FormNativeSelect({
   modal?: boolean;
   /** Estilo da opção destacada na lista aberta. */
   itemClassName?: string;
+  /** Texto do campo fechado. Evita o seletor mostrar outro item da lista. */
+  displayValue?: string;
   "aria-describedby"?: string;
 }) {
   const mergedOptions = React.useMemo(() => {
@@ -217,6 +220,7 @@ export function FormNativeSelect({
       id={id}
       invalid={invalid}
       modal={modal}
+      displayValue={displayValue}
       aria-describedby={ariaDescribedBy}
     >
       {mergedOptions.map(o => (

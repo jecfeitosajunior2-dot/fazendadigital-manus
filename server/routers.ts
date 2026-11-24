@@ -9211,6 +9211,10 @@ const fazendasRouter = router({
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(({ ctx, input }) => fazendasOperacao.excluir(sessaoFazenda(ctx), input.id)),
+
+  definirSituacao: protectedProcedure
+    .input(z.object({ id: z.number(), situacao: z.enum(["ativo", "inativo"]) }))
+    .mutation(({ ctx, input }) => fazendasOperacao.definirSituacao(sessaoFazenda(ctx), input.id, input.situacao)),
 });
 
 function recusarPastoSemMysql(): never {

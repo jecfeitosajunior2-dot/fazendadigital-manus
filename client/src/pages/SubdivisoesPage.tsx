@@ -1,17 +1,34 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useSearch } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { FazendaSubdivisoesPanel } from "@/components/FazendaSubdivisoesPanel";
 import FarmPastosSheet from "@/components/FarmPastosSheet";
+import { fazendaDaLista, fazendaIdDaBusca } from "@/lib/fazendasListagem";
 
 const FD_PRIMARY = "#4ECDC4";
 
 export default function SubdivisoesPage() {
+  const busca = useSearch();
   const [selectedFazenda, setSelectedFazenda] = useState<{ id: number; nome: string; responsavel?: string | null } | null>(null);
   const [pastosOpen, setPastosOpen] = useState(false);
   const [pastosSheetFazenda, setPastosSheetFazenda] = useState<any>(null);
+  const pedidoAplicado = useRef(false);
 
   const { data: fazendaList = [], isLoading } = trpc.fazendas.list.useQuery();
   const { data: allPastos = [] } = trpc.pastos.list.useQuery();
+  const idPedido = fazendaIdDaBusca(busca);
+  const fazendaPedido = fazendaDaLista(fazendaList, idPedido);
+  const pedidoAusente = !isLoading && idPedido != null && fazendaPedido == null;
+
+  useEffect(() => {
+    if (pedidoAplicado.current || isLoading) return;
+    pedidoAplicado.current = true;
+    if (!fazendaPedido) return;
+    setSelectedFazenda(fazendaPedido);
+    window.setTimeout(() => {
+      document.getElementById("fazenda-subdivisoes")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 250);
+  }, [isLoading, fazendaPedido]);
 
   const pastosPorFazenda: Record<number, number> = {};
   allPastos.forEach((p) => {
@@ -27,6 +44,9 @@ export default function SubdivisoesPage() {
           <p className="text-[11px] text-gray-500 mt-0.5">
             Gerencie os pastos e subdivisões de cada fazenda
           </p>
+          {pedidoAusente && (
+            <p className="text-[12px] text-gray-500 mt-2">Essa fazenda não está disponível nesta conta.</p>
+          )}
         </div>
       </div>
 

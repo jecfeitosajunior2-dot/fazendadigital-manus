@@ -11,6 +11,7 @@ import {
   type FazendaDeleteBlocker,
   type FazendaDeleteBlockerKey,
 } from "../shared/fazendaDeleteBlockers";
+import { prepararCamposFazenda } from "../shared/fazendaCadastro";
 import { loginPermitido, type IdentidadeUsuario } from "./_core/identidadeSessao";
 import { avaliarAcessoFazenda, montarAcesso } from "./acessoFazendas";
 import { autorizarOperacaoPersistida } from "./cadastroAnimalAutorizado";
@@ -28,6 +29,8 @@ export const MSG_FAZENDA_VINCULO_OPACO =
   "Não foi possível conferir os vínculos desta fazenda. Nada foi apagado.";
 export const MSG_FAZENDA_EXCLUSAO_BLOQUEADA =
   "A fazenda não é apagada. Um pasto ou lançamento pode ser confirmado no mesmo instante, e o banco não segura essa brecha. O cadastro permanece.";
+export const MSG_FAZENDA_SITUACAO_INDISPONIVEL =
+  "A inativação da fazenda ainda não está disponível neste banco. Nada foi alterado.";
 
 export type SessaoFazenda = {
   executorId: number;
@@ -138,12 +141,9 @@ async function autorizarFazenda(tx: Tx, sessao: SessaoFazenda, fazendaId: number
 }
 
 function camposLivres(entrada: Record<string, unknown>) {
-  const dados: Record<string, unknown> = {};
-  for (const [chave, valor] of Object.entries(entrada)) {
-    if (chave === "userId" || chave === "id" || chave === "createdAt" || chave === "updatedAt") continue;
-    if (valor !== undefined) dados[chave] = valor;
-  }
-  return dados;
+  const preparado = prepararCamposFazenda(entrada);
+  if (!preparado.ok) throw new TRPCError({ code: "BAD_REQUEST", message: preparado.mensagem });
+  return preparado.dados;
 }
 
 async function contar(tx: Tx, consulta: ReturnType<typeof sql>) {
@@ -180,6 +180,26 @@ const HISTORICO = [
   (id: number) => sql`SELECT COUNT(*) AS n FROM semen_partidas WHERE fazenda_id = ${id}`,
 ];
 
+async function colunaSituacaoExiste(tx: Tx) {
+  const qtd = await contar(
+    tx,
+    sql`SELECT COUNT(*) AS n FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'fazendas' AND COLUMN_NAME = 'situacao'`,
+  );
+  return qtd != null && qtd > 0;
+}
+
+async function situacoesDaConta(tx: Tx, titular: number) {
+  if (!(await colunaSituacaoExiste(tx))) return null;
+  const resultado = await tx.execute(sql`SELECT id, situacao FROM fazendas WHERE userId = ${titular}`);
+  const pacote = resultado as unknown as [Array<{ id?: number; situacao?: string }>, unknown];
+  const linhas = Array.isArray(pacote?.[0]) ? pacote[0] : [];
+  const mapa = new Map<number, "ativo" | "inativo">();
+  for (const linha of linhas) {
+    mapa.set(Number(linha.id), linha.situacao === "inativo" ? "inativo" : "ativo");
+  }
+  return mapa;
+}
+
 async function vinculos(tx: Tx, titular: number, id: number) {
   const blockers: FazendaDeleteBlocker[] = [];
   for (const item of BLOQUEIOS) {
@@ -213,7 +233,10 @@ export const fazendasOperacao = {
         vinculos: vinculosConta,
       });
       if (!acesso) recusar("sem_identidade");
-      return linhas.filter((row) => avaliarAcessoFazenda(acesso, { id: row.id, userId: row.userId }) === "permitido");
+      const situacoes = await situacoesDaConta(tx, atual.titular);
+      return linhas
+        .filter((row) => avaliarAcessoFazenda(acesso, { id: row.id, userId: row.userId }) === "permitido")
+        .map((row) => ({ ...row, situacao: situacoes?.get(row.id) ?? "ativo" }));
     });
   },
 
@@ -249,6 +272,30 @@ export const fazendasOperacao = {
       const [row] = await tx.select({ userId: fazendas.userId }).from(fazendas).where(eq(fazendas.id, id)).limit(1);
       if (!row || row.userId !== contexto.titularUserId) recusar("fazenda_inexistente");
       return { success: true as const };
+    });
+  },
+
+  async definirSituacao(sessao: SessaoFazenda, id: number, situacao: "ativo" | "inativo") {
+    return correr(async (tx) => {
+      const contexto = await autorizarFazenda(tx, sessao, id, "fazendas.inativar");
+      if (!(await colunaSituacaoExiste(tx))) {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_FAZENDA_SITUACAO_INDISPONIVEL });
+      }
+      const [row] = await tx
+        .select({ userId: fazendas.userId })
+        .from(fazendas)
+        .where(eq(fazendas.id, id))
+        .for("update")
+        .limit(1);
+      if (!row || row.userId !== contexto.titularUserId) recusar("fazenda_inexistente");
+      await tx.execute(sql`
+        UPDATE fazendas
+        SET situacao = ${situacao}
+        WHERE id = ${id} AND userId = ${contexto.titularUserId}
+      `);
+      const situacoes = await situacoesDaConta(tx, contexto.titularUserId);
+      if (situacoes?.get(id) !== situacao) recusar("fazenda_inexistente");
+      return { success: true as const, situacao };
     });
   },
 

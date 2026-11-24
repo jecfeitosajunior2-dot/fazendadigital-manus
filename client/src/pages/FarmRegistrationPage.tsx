@@ -8,6 +8,16 @@ import { SelectItem } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { formatCpfCnpj, formatCurrencyBrl, parseCurrencyBrl } from "@/lib/utils";
+import { useConfirm } from "@/components/ConfirmDialog";
+import {
+  conferirAreas,
+  documentoBrConsistente,
+  exibirAreaSalva,
+  interpretarArea,
+  formatarAreaPtBr,
+  paisInicial,
+  ufDoBrasil,
+} from "@shared/fazendaCadastro";
 import {
   FD_PRIMARY,
   FormLabel,
@@ -143,11 +153,13 @@ type FormState = {
   observacoes: string;
 };
 
-const emptyForm = (responsavel = ""): FormState => ({
+const LISTA_FAZENDAS = "/fazendas/lista-fazendas";
+
+const emptyForm = (): FormState => ({
   nome: "",
   sigla: "",
-  responsavel,
-  pais: "Brasil",
+  responsavel: "",
+  pais: paisInicial(null),
   estado: "",
   cidade: "",
   unidadeArea: "Hectare",
@@ -192,18 +204,6 @@ function str(v: unknown) {
 
 function bool(v: unknown) {
   return v === true || v === 1;
-}
-
-function parseDecimal(value: string) {
-  if (!value?.trim()) return null;
-  const normalized = value.replace(",", ".");
-  const parsed = Number(normalized);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function formatDecimal(value: number) {
-  const fixed = value.toFixed(2);
-  return fixed.endsWith(".00") ? fixed.slice(0, -3) : fixed.replace(/0$/, "");
 }
 
 function formatPhoneBR(value: string) {
@@ -253,13 +253,13 @@ function mapFazendaToForm(fazenda: Record<string, unknown>): FormState {
     nome: String(fazenda.nome ?? ""),
     sigla: String(fazenda.sigla ?? ""),
     responsavel: String(fazenda.responsavel ?? ""),
-    pais: String(fazenda.pais ?? "Brasil"),
+    pais: String(fazenda.pais ?? "").trim() || paisInicial(null),
     estado: estadoUf,
     cidade: cidadeSalva,
     unidadeArea: String(fazenda.unidadeArea ?? "Hectare"),
-    area: str(fazenda.area),
-    areaReserva: str(fazenda.areaReserva),
-    areaLiquida: str(fazenda.areaLiquida),
+    area: exibirAreaSalva(fazenda.area),
+    areaReserva: exibirAreaSalva(fazenda.areaReserva),
+    areaLiquida: exibirAreaSalva(fazenda.areaLiquida),
     endereco: String(fazenda.endereco ?? ""),
     atividadePrincipal: String(fazenda.atividadePrincipal ?? ""),
     atividadeCria: bool(fazenda.atividadeCria),
@@ -308,7 +308,7 @@ function FormSection({
   return (
     <section className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden">
       <div className="px-5 py-4 border-b border-gray-100">
-        <h2 className="text-[13px] font-semibold text-[#4ECDC4]">{title}</h2>
+        <h2 className="font-semibold text-[#4ECDC4]" style={{ fontFamily: "Inter, sans-serif", fontSize: "16px", fontWeight: 600 }}>{title}</h2>
         {description && <p className="mt-1 text-[11px] leading-relaxed text-gray-500">{description}</p>}
       </div>
       <div className="p-5">{children}</div>
@@ -384,6 +384,27 @@ function parseFazendaId(search: string): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function possuiComplemento(formulario: FormState): boolean {
+  return Boolean(
+    formulario.razaoSocial.trim()
+    || formulario.cpfCnpj.trim()
+    || formulario.inscricaoEstadual.trim()
+    || formulario.registroIncra.trim()
+    || formulario.nirf.trim()
+    || formulario.numeroCar.trim()
+    || formulario.matriculasImovel.some(item => item.trim())
+    || formulario.tipoPosse.trim()
+    || formulario.possuiSisbov === "sim"
+    || formulario.latitude.trim()
+    || formulario.longitude.trim()
+    || formulario.distanciaMunicipio.trim()
+    || formulario.valorHectare.trim()
+    || formulario.responsavelOperacionalNome.trim()
+    || formulario.responsavelOperacionalTelefone.trim()
+    || formulario.responsavelOperacionalFuncaoSelect.trim()
+  );
+}
+
 function fazendaHydrationKey(fazenda: Record<string, unknown> | null | undefined) {
   if (!fazenda) return "";
   return [
@@ -403,11 +424,11 @@ function fazendaHydrationKey(fazenda: Record<string, unknown> | null | undefined
 export function FarmRegistrationPage() {
   const searchString = useSearch();
   const [, setLocation] = useLocation();
+  const confirm = useConfirm();
   const utils = trpc.useUtils();
   const fazendaId = parseFazendaId(searchString);
   const isEdit = fazendaId != null;
 
-  const { data: user } = trpc.auth.me.useQuery();
   const {
     data: fazenda,
     isLoading: loadingFazenda,
@@ -430,6 +451,9 @@ export function FarmRegistrationPage() {
   const [errosObrigatorios, setErrosObrigatorios] = useState<
     Partial<Record<CampoObrigatorio, string>>
   >({});
+  const [errosArea, setErrosArea] = useState<{ area?: string; areaReserva?: string }>({});
+  const [erroDocumento, setErroDocumento] = useState("");
+  const baseRef = React.useRef("");
   const tentativaValidacao = Object.keys(errosObrigatorios).length > 0;
 
   const hydrationKey = isEdit ? fazendaHydrationKey(fazenda as Record<string, unknown> | undefined) : "new";
@@ -438,30 +462,39 @@ export function FarmRegistrationPage() {
     setHydratedKey("");
   }, [fazendaId]);
 
-  useEffect(() => {
-    if (isEdit) return;
-    setForm(emptyForm(user?.name || ""));
-    setCidades([]);
-    setHydratedKey("new");
-  }, [fazendaId, isEdit, user?.name]);
+  const lembrarBase = (proximo: FormState) => {
+    baseRef.current = JSON.stringify(proximo);
+  };
 
   useEffect(() => {
-    if (!isEdit && user?.name) {
-      setForm(f => ({ ...f, responsavel: user.name || "" }));
-    }
-  }, [user?.name, isEdit]);
+    if (isEdit) return;
+    const inicial = emptyForm();
+    setForm(inicial);
+    lembrarBase(inicial);
+    setCadastroAvancado(false);
+    setCidades([]);
+    setHydratedKey("new");
+  }, [fazendaId, isEdit]);
 
   useEffect(() => {
     if (!isEdit || !fazenda || !hydrationKey) return;
     if (hydratedKey === hydrationKey) return;
 
-    setForm(mapFazendaToForm(fazenda as Record<string, unknown>));
+    const proximo = mapFazendaToForm(fazenda as Record<string, unknown>);
+    setForm(proximo);
+    lembrarBase(proximo);
+    setCadastroAvancado(possuiComplemento(proximo));
     setHydratedKey(hydrationKey);
   }, [isEdit, fazenda, hydrationKey, hydratedKey]);
 
   useEffect(() => {
     if (isEdit && !fazenda) return;
-    if (!form.estado) {
+    if (form.pais !== "Brasil") {
+      setCidades([]);
+      setLoadingCidades(false);
+      return;
+    }
+    if (!form.estado || !ufDoBrasil(form.estado)) {
       setCidades([]);
       return;
     }
@@ -490,25 +523,7 @@ export function FarmRegistrationPage() {
     return () => {
       cancelled = true;
     };
-  }, [form.estado, form.cidade, isEdit, fazenda, hydrationKey]);
-
-  useEffect(() => {
-    if (!isEdit || !fazenda) return;
-
-    const areaTotal = parseDecimal(form.area);
-    if (areaTotal == null) {
-      if (form.areaLiquida) setForm(f => ({ ...f, areaLiquida: "" }));
-      return;
-    }
-
-    const areaReserva = parseDecimal(form.areaReserva) ?? 0;
-    const areaLiquida = Math.max(areaTotal - areaReserva, 0);
-    const areaLiquidaFormatada = formatDecimal(areaLiquida);
-
-    if (form.areaLiquida !== areaLiquidaFormatada) {
-      setForm(f => ({ ...f, areaLiquida: areaLiquidaFormatada }));
-    }
-  }, [form.area, form.areaReserva, form.areaLiquida, isEdit, fazenda]);
+  }, [form.pais, form.estado, form.cidade, isEdit, fazenda, hydrationKey]);
 
   const estadoOptions = useMemo(
     () => ESTADOS_BR.map(e => ({ value: e.uf, label: e.nome })),
@@ -544,6 +559,28 @@ export function FarmRegistrationPage() {
         return next;
       });
     }
+  };
+
+  const setPais = (pais: string) => {
+    setForm(atual => (atual.pais === pais ? atual : { ...atual, pais, estado: "", cidade: "" }));
+    setCidades([]);
+    setErrosObrigatorios(prev => {
+      const next = { ...prev };
+      delete next.pais;
+      delete next.estado;
+      delete next.cidade;
+      return next;
+    });
+  };
+
+  const formatarAreaDigitada = (campo: "area" | "areaReserva", valor: string) => {
+    const lida = interpretarArea(valor);
+    if (lida.ok && !lida.vazia) set(campo, formatarAreaPtBr(lida.centavos));
+    const areas = conferirAreas(
+      campo === "area" ? valor : form.area,
+      campo === "areaReserva" ? valor : form.areaReserva,
+    );
+    setErrosArea(areas.erros);
   };
 
   const setEstado = (v: string) => {
@@ -589,7 +626,6 @@ export function FarmRegistrationPage() {
     unidadeArea: form.unidadeArea || undefined,
     area: form.area || undefined,
     areaReserva: form.areaReserva || undefined,
-    areaLiquida: form.areaLiquida || undefined,
     endereco: form.endereco || undefined,
     atividadePrincipal: form.atividadePrincipal || undefined,
     atividadeCria: form.atividadeCria,
@@ -630,7 +666,7 @@ export function FarmRegistrationPage() {
     onSuccess: () => {
       utils.fazendas.list.invalidate();
       toast.success("Fazenda cadastrada com sucesso!");
-      setLocation("/fazendas/visao-geral");
+      setLocation(LISTA_FAZENDAS);
     },
     onError: e => toast.error(e.message),
   });
@@ -640,7 +676,7 @@ export function FarmRegistrationPage() {
       utils.fazendas.list.invalidate();
       if (fazendaId) utils.fazendas.get.invalidate({ id: fazendaId });
       toast.success("Fazenda atualizada!");
-      setLocation("/fazendas/visao-geral");
+      setLocation(LISTA_FAZENDAS);
     },
     onError: e => toast.error(e.message),
   });
@@ -659,7 +695,24 @@ export function FarmRegistrationPage() {
       return;
     }
 
+    const areas = conferirAreas(form.area, form.areaReserva);
+    if (areas.erros.area || areas.erros.areaReserva) {
+      setErrosArea(areas.erros);
+      toast.error(areas.erros.area || areas.erros.areaReserva || "Revise as áreas.");
+      return;
+    }
+    if (form.pais === "Brasil") {
+      const documento = documentoBrConsistente(form.cpfCnpj);
+      if (documento !== true) {
+        setErroDocumento(documento);
+        setCadastroAvancado(true);
+        toast.error(documento);
+        return;
+      }
+    }
     setErrosObrigatorios({});
+    setErrosArea({});
+    setErroDocumento("");
     if (isEdit && fazendaId) {
       updateMutation.mutate({ id: fazendaId, ...payload() });
     } else {
@@ -668,6 +721,22 @@ export function FarmRegistrationPage() {
   };
 
   const formSyncedForEdit = !isEdit || (hydratedKey === hydrationKey && hydrationKey !== "");
+  const areasAtuais = conferirAreas(form.area, form.areaReserva);
+  const areaLiquidaExibida = areasAtuais.liquida == null ? "" : formatarAreaPtBr(areasAtuais.liquida);
+  const brasil = form.pais === "Brasil";
+  const sair = async () => {
+    if (JSON.stringify(form) !== baseRef.current) {
+      const ok = await confirm({
+        title: "Descartar alterações?",
+        description: "Os dados preenchidos ainda não foram salvos.",
+        confirmText: "Descartar",
+        cancelText: "Continuar editando",
+        variant: "warning",
+      });
+      if (ok !== true) return;
+    }
+    setLocation(LISTA_FAZENDAS);
+  };
 
   if (isEdit && (loadingFazenda || fetchingFazenda) && !fazenda) {
     return (
@@ -684,7 +753,7 @@ export function FarmRegistrationPage() {
           <span>Fazenda não encontrada.</span>
           <button
             type="button"
-            onClick={() => setLocation("/fazendas/visao-geral")}
+            onClick={() => setLocation(LISTA_FAZENDAS)}
             className="px-4 py-2 rounded-full text-[11px] font-semibold uppercase bg-[#EEEEEE] text-gray-700"
           >
             Voltar
@@ -704,9 +773,28 @@ export function FarmRegistrationPage() {
 
   return (
     <AppLayout>
+      <div className="fazenda-formulario">
+      <style>{`
+        .fazenda-formulario, .fazenda-formulario label, .fazenda-formulario input,
+        .fazenda-formulario textarea, .fazenda-formulario h1, .fazenda-formulario h2,
+        .fazenda-formulario [data-slot="select-trigger"],
+        .fazenda-formulario [data-slot="select-trigger"] span {
+          font-family: Inter, sans-serif;
+        }
+        .fazenda-formulario label { font-size: 13px; font-weight: 500; }
+        .fazenda-formulario input,
+        .fazenda-formulario textarea,
+        .fazenda-formulario [data-slot="select-trigger"],
+        .fazenda-formulario [data-slot="select-trigger"] span {
+          font-size: 14px;
+          font-weight: 400;
+        }
+        .fazenda-formulario .fazenda-acao { font-size: 14px; font-weight: 600; }
+        .fazenda-formulario .material-icons { font-family: "Material Icons"; }
+      `}</style>
       <button
         type="button"
-        onClick={() => setLocation("/fazendas/visao-geral")}
+        onClick={() => { void sair(); }}
         className="mb-4 flex items-center gap-1.5 text-gray-500 hover:text-gray-800 transition-colors group"
       >
         <span className="material-icons text-[18px] group-hover:-translate-x-0.5 transition-transform">
@@ -717,7 +805,7 @@ export function FarmRegistrationPage() {
       <form onSubmit={handleSubmit} noValidate>
         <div className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden mb-5">
           <div className="px-5 py-4 flex flex-wrap items-center justify-between gap-3">
-            <h1 className="text-[20px] font-semibold text-gray-900" style={{ fontFamily: "Fraunces, serif" }}>
+            <h1 className="text-gray-900" style={{ fontFamily: "Inter, sans-serif", fontSize: "24px", fontWeight: 600 }}>
               {isEdit ? "Editar Fazenda" : "Cadastrar Fazenda"}
             </h1>
             <div className="flex items-center gap-3 rounded-full border border-gray-200 bg-white px-3 py-2">
@@ -760,7 +848,7 @@ export function FarmRegistrationPage() {
                 </div>
                 <div>
                   <FormLabel>Nome do Proprietário</FormLabel>
-                  <FormInput variant="light" value={form.responsavel} onChange={v => set("responsavel", v)} placeholder="Opcional" />
+                  <FormInput variant="light" value={form.responsavel} onChange={v => set("responsavel", v)} placeholder="Dono do imóvel" />
                 </div>
               </div>
 
@@ -770,9 +858,10 @@ export function FarmRegistrationPage() {
                   <FormNativeSelect variant="light"
                     id={fieldDomId("pais")}
                     value={form.pais}
-                    onChange={v => set("pais", v)}
+                    onChange={setPais}
                     placeholder="Selecione"
                     required
+                    displayValue={form.pais}
                     options={PAIS_OPTIONS}
                     invalid={!!errosObrigatorios.pais}
                     aria-describedby={errosObrigatorios.pais ? "fazenda-err-pais" : undefined}
@@ -781,43 +870,68 @@ export function FarmRegistrationPage() {
                 </div>
                 <div className="scroll-mt-24">
                   <FormLabel required>Estado</FormLabel>
-                  <FormSelect variant="light"
-                    id={fieldDomId("estado")}
-                    value={form.estado}
-                    onChange={setEstado}
-                    placeholder="Selecione"
-                    required
-                    displayValue={estadoDisplayName}
-                    invalid={!!errosObrigatorios.estado}
-                    aria-describedby={errosObrigatorios.estado ? "fazenda-err-estado" : undefined}
-                  >
-                    {estadoOptions.map(o => (
-                      <SelectItem key={o.value} value={o.value} className="text-[13px]">
-                        {o.label}
-                      </SelectItem>
-                    ))}
-                  </FormSelect>
+                  {brasil ? (
+                    <FormSelect variant="light"
+                      id={fieldDomId("estado")}
+                      value={form.estado}
+                      onChange={setEstado}
+                      placeholder="Selecione"
+                      required
+                      displayValue={estadoDisplayName}
+                      invalid={!!errosObrigatorios.estado}
+                      aria-describedby={errosObrigatorios.estado ? "fazenda-err-estado" : undefined}
+                    >
+                      {estadoOptions.map(o => (
+                        <SelectItem key={o.value} value={o.value} className="text-[13px]">
+                          {o.label}
+                        </SelectItem>
+                      ))}
+                    </FormSelect>
+                  ) : (
+                    <FormInput variant="light"
+                      id={fieldDomId("estado")}
+                      value={form.estado}
+                      onChange={v => set("estado", v.toUpperCase().slice(0, 2))}
+                      placeholder="Sigla"
+                      invalid={!!errosObrigatorios.estado}
+                      aria-describedby={errosObrigatorios.estado ? "fazenda-err-estado" : undefined}
+                    />
+                  )}
+                  {!brasil && (
+                    <p className="mt-1 text-[10px] text-gray-400">Fora do Brasil, informe a sigla de duas letras.</p>
+                  )}
                   <FieldErrorMsg id="fazenda-err-estado" message={errosObrigatorios.estado} />
                 </div>
                 <div className="scroll-mt-24">
                   <FormLabel required>Município</FormLabel>
-                  <FormSelect variant="light"
-                    id={fieldDomId("cidade")}
-                    value={form.cidade}
-                    onChange={v => set("cidade", v)}
-                    placeholder={municipioPlaceholder}
-                    disabled={!form.estado || loadingCidades}
-                    required
-                    displayValue={form.cidade}
-                    invalid={!!errosObrigatorios.cidade}
-                    aria-describedby={errosObrigatorios.cidade ? "fazenda-err-cidade" : undefined}
-                  >
-                    {municipioOptions.map(o => (
-                      <SelectItem key={o.value} value={o.value} className="text-[13px]">
-                        {o.label}
-                      </SelectItem>
-                    ))}
-                  </FormSelect>
+                  {brasil ? (
+                    <FormSelect variant="light"
+                      id={fieldDomId("cidade")}
+                      value={form.cidade}
+                      onChange={v => set("cidade", v)}
+                      placeholder={municipioPlaceholder}
+                      disabled={!form.estado || loadingCidades}
+                      required
+                      displayValue={form.cidade}
+                      invalid={!!errosObrigatorios.cidade}
+                      aria-describedby={errosObrigatorios.cidade ? "fazenda-err-cidade" : undefined}
+                    >
+                      {municipioOptions.map(o => (
+                        <SelectItem key={o.value} value={o.value} className="text-[13px]">
+                          {o.label}
+                        </SelectItem>
+                      ))}
+                    </FormSelect>
+                  ) : (
+                    <FormInput variant="light"
+                      id={fieldDomId("cidade")}
+                      value={form.cidade}
+                      onChange={v => set("cidade", v)}
+                      placeholder="Município"
+                      invalid={!!errosObrigatorios.cidade}
+                      aria-describedby={errosObrigatorios.cidade ? "fazenda-err-cidade" : undefined}
+                    />
+                  )}
                   <FieldErrorMsg id="fazenda-err-cidade" message={errosObrigatorios.cidade} />
                 </div>
               </div>
@@ -846,22 +960,37 @@ export function FarmRegistrationPage() {
                   <FormInput variant="light"
                     id={fieldDomId("area")}
                     value={form.area}
-                    onChange={v => set("area", v)}
-                    placeholder="0"
-                    type="number"
+                    onChange={v => {
+                      set("area", v);
+                      if (errosArea.area) setErrosArea(prev => ({ ...prev, area: undefined }));
+                    }}
+                    onBlur={v => formatarAreaDigitada("area", v)}
+                    placeholder="0,00"
+                    inputMode="decimal"
                     required
-                    invalid={!!errosObrigatorios.area}
-                    aria-describedby={errosObrigatorios.area ? "fazenda-err-area" : undefined}
+                    invalid={!!errosObrigatorios.area || !!errosArea.area}
+                    aria-describedby={errosObrigatorios.area || errosArea.area ? "fazenda-err-area" : undefined}
                   />
-                  <FieldErrorMsg id="fazenda-err-area" message={errosObrigatorios.area} />
+                  <FieldErrorMsg id="fazenda-err-area" message={errosObrigatorios.area || errosArea.area} />
                 </div>
                 <div>
                   <FormLabel>Área de Reserva</FormLabel>
-                  <FormInput variant="light" value={form.areaReserva} onChange={v => set("areaReserva", v)} placeholder="0" type="number" />
+                  <FormInput variant="light"
+                    value={form.areaReserva}
+                    onChange={v => {
+                      set("areaReserva", v);
+                      if (errosArea.areaReserva) setErrosArea(prev => ({ ...prev, areaReserva: undefined }));
+                    }}
+                    onBlur={v => formatarAreaDigitada("areaReserva", v)}
+                    placeholder="0,00"
+                    inputMode="decimal"
+                    invalid={!!errosArea.areaReserva}
+                  />
+                  <FieldErrorMsg id="fazenda-err-reserva" message={errosArea.areaReserva} />
                 </div>
                 <div>
                   <FormLabel>Área Líquida da Fazenda</FormLabel>
-                  <FormInput variant="light" value={form.areaLiquida} readOnly placeholder="0" type="number" />
+                  <FormInput variant="light" value={areaLiquidaExibida} onChange={() => undefined} readOnly placeholder="0,00" />
                   <p className="mt-1 text-[10px] text-gray-400">Calculada automaticamente: Área Total - Área de Reserva</p>
                 </div>
               </div>
@@ -874,6 +1003,7 @@ export function FarmRegistrationPage() {
                     value={form.atividadePrincipal}
                     onChange={v => set("atividadePrincipal", v)}
                     placeholder="Selecione"
+                    displayValue={form.atividadePrincipal}
                     required
                     options={ATIVIDADE_PRINCIPAL_OPTIONS}
                     invalid={!!errosObrigatorios.atividadePrincipal}
@@ -918,9 +1048,14 @@ export function FarmRegistrationPage() {
                       <FormLabel>CPF/CNPJ</FormLabel>
                       <FormInput variant="light"
                         value={form.cpfCnpj}
-                        onChange={v => set("cpfCnpj", formatCpfCnpj(v))}
+                        onChange={v => {
+                          set("cpfCnpj", formatCpfCnpj(v));
+                          if (erroDocumento) setErroDocumento("");
+                        }}
                         placeholder={form.cpfCnpj.replace(/\D/g, "").length > 11 ? "00.000.000/0000-00" : "000.000.000-00"}
+                        invalid={!!erroDocumento}
                       />
+                      <FieldErrorMsg id="fazenda-err-documento" message={erroDocumento} />
                     </div>
                     <div>
                       <FormLabel>Inscrição Estadual</FormLabel>
@@ -1103,15 +1238,15 @@ export function FarmRegistrationPage() {
             <div className="flex justify-end gap-3 shrink-0">
               <button
                 type="button"
-                onClick={() => setLocation("/fazendas/visao-geral")}
-                className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-white border border-gray-300 text-gray-800 hover:bg-gray-50 transition-colors"
+                onClick={() => { void sair(); }}
+                className="fazenda-acao px-6 py-2 rounded-full uppercase tracking-wide bg-white border border-gray-300 text-gray-800 hover:bg-gray-50 transition-colors"
               >
                 Cancelar
               </button>
               <button
                 type="submit"
                 disabled={isBusy}
-                className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide text-gray-800 hover:opacity-90 transition-opacity disabled:opacity-50"
+                className="fazenda-acao px-6 py-2 rounded-full uppercase tracking-wide text-gray-800 hover:opacity-90 transition-opacity disabled:opacity-50"
                 style={{ backgroundColor: FD_PRIMARY }}
               >
                 {isBusy ? "Salvando..." : isEdit ? "Salvar" : "Cadastrar"}
@@ -1119,6 +1254,7 @@ export function FarmRegistrationPage() {
             </div>
           </div>
       </form>
+      </div>
     </AppLayout>
   );
 }
