@@ -344,6 +344,7 @@ import { brincosOperacao } from "./brincosOperacao";
 import { registrarBrincoPontual } from "./registrarBrincoPontual";
 import { benfeitoriasOperacao } from "./benfeitoriasOperacao";
 import { carregarIdentidade } from "./_core/carregarIdentidade";
+import { precisaTrocarDaConta } from "./senhaContaDb";
 import { identificadorDeLogin } from "./_core/identificadorLogin";
 import { MSG_LOGIN_INVALIDO, senhaConfereComHash } from "./_core/loginSenha";
 import { autorizarOperacao } from "./contextoOperacional";
@@ -415,6 +416,7 @@ const authRouter = router({
         papel: registro.papel,
         situacao: registro.situacao,
         titularUserId: registro.titularUserId,
+        precisaTrocarSenha: await precisaTrocarDaConta(registro.id),
       };
     } catch {
       return null;

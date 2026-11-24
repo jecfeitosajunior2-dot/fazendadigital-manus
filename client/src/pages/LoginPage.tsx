@@ -10,7 +10,6 @@ export default function LoginPage() {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [showPass, setShowPass] = useState(false);
   const [accessPanel, setAccessPanel] = useState<"none" | "forgot" | "register">("none");
-  const [recoveryEmail, setRecoveryEmail] = useState("");
   const [registerName, setRegisterName] = useState("");
   const [registerEmail, setRegisterEmail] = useState("");
   const [accessFeedback, setAccessFeedback] = useState("");
@@ -22,9 +21,12 @@ export default function LoginPage() {
   });
 
   const loginMutation = trpc.auth.login.useMutation({
-    onSuccess: () => {
+    onSuccess: (resultado) => {
       setIsLoggingIn(false);
-      setLocation("/admin/overview");
+      const destino = resultado.user && "precisaTrocarSenha" in resultado.user && resultado.user.precisaTrocarSenha
+        ? "/conta/minha"
+        : "/admin/overview";
+      setLocation(destino);
     },
     onError: () => {
       setIsLoggingIn(false);
@@ -37,7 +39,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (isLoading) return;
-    if (user) setLocation("/admin/overview");
+    if (user) setLocation(user.precisaTrocarSenha ? "/conta/minha" : "/admin/overview");
   }, [user, isLoading, setLocation]);
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -50,9 +52,6 @@ export default function LoginPage() {
   const openAccessPanel = (panel: "forgot" | "register") => {
     setAccessFeedback("");
     setAccessPanel(panel);
-    if (panel === "forgot") {
-      setRecoveryEmail(email);
-    }
     if (panel === "register") {
       setRegisterEmail(email);
     }
@@ -240,7 +239,7 @@ export default function LoginPage() {
                   onMouseEnter={e => (e.currentTarget.style.color = "#4ECDC4")}
                   onMouseLeave={e => (e.currentTarget.style.color = accessPanel === "forgot" ? "#4ECDC4" : "rgba(255,255,255,0.45)")}
                 >
-                  Esqueceu sua senha?
+                  Recuperar acesso
                 </button>
               </div>
               <div className="relative">
@@ -365,7 +364,7 @@ export default function LoginPage() {
                     </h3>
                     <p style={{ marginTop: "3px", color: "rgba(255,255,255,0.44)", fontFamily: "'Inter', sans-serif", fontSize: "12px", lineHeight: 1.4 }}>
                       {accessPanel === "forgot"
-                        ? "Informe seu e-mail para iniciar a recuperação."
+                        ? "A recuperação depende do procedimento administrativo autorizado na instalação."
                         : "Preencha seus dados para solicitar acesso ao sistema."}
                     </p>
                   </div>
@@ -386,37 +385,9 @@ export default function LoginPage() {
                 </div>
 
                 {accessPanel === "forgot" ? (
-                  <div className="space-y-3">
-                    <input
-                      type="email"
-                      value={recoveryEmail}
-                      onChange={e => setRecoveryEmail(e.target.value)}
-                      placeholder="seu@email.com"
-                      className="w-full px-4 py-3 text-sm rounded-xl transition-all focus:outline-none"
-                      style={{
-                        background: "rgba(255,255,255,0.05)",
-                        border: "1px solid rgba(255,255,255,0.12)",
-                        color: "white",
-                        fontFamily: "'Inter', sans-serif",
-                        fontSize: "13px",
-                      }}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setAccessFeedback("Solicitação de recuperação registrada.")}
-                      disabled={!recoveryEmail}
-                      className="w-full py-2.5 rounded-xl font-semibold transition-all active:scale-[0.98] disabled:opacity-40"
-                      style={{
-                        background: "rgba(78,205,196,0.14)",
-                        border: "1px solid rgba(78,205,196,0.28)",
-                        color: "#8EF4EA",
-                        fontFamily: "'Inter', sans-serif",
-                        fontSize: "13px",
-                      }}
-                    >
-                      Enviar instruções
-                    </button>
-                  </div>
+                  <p style={{ color: "rgba(255,255,255,0.78)", fontFamily: "'Inter', sans-serif", fontSize: "13px", lineHeight: 1.5 }}>
+                    Não enviamos e-mail e não consultamos se a conta existe. Quem esqueceu a senha pede ao responsável pela instalação. Esse responsável executa, no computador do servidor, o comando administrativo de recuperação. Depois, o titular entra com a credencial nova e troca a senha em Minha conta.
+                  </p>
                 ) : (
                   <div className="space-y-3">
                     <input

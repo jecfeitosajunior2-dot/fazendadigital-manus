@@ -3,6 +3,7 @@ import type { Pool } from "mysql2/promise";
 import { z } from "zod";
 import { criarAdministracaoDaAplicacao } from "./administracaoDb";
 import { criarConsultasDaAplicacao } from "./administracaoConsultaDb";
+import { criarSenhaContaDaAplicacao } from "./senhaContaDb";
 import { protectedProcedure, router } from "./_core/trpc";
 import { createMysqlPool } from "./_core/mysqlPool";
 import { env } from "./_core/env";
@@ -16,6 +17,10 @@ const MENSAGENS: Record<string, string> = {
   hierarquia_recusada: "Não é possível criar outro titular por esta tela.",
   senha_invalida: "A senha precisa ter entre 8 e 80 caracteres.",
   senha_ausente: "Informe a senha inicial.",
+  senha_atual_incorreta: "A senha atual não confere.",
+  confirmacao_diferente: "A confirmação da senha não confere.",
+  senha_reutilizada: "A nova senha precisa ser diferente da atual.",
+  sessao_invalida: "Sessão inválida.",
   email_duplicado: "Este e-mail já está em uso.",
   email_invalido: "Informe um e-mail válido.",
   nome_invalido: "Informe o nome.",
@@ -40,6 +45,7 @@ function servicos() {
   return {
     gravar: criarAdministracaoDaAplicacao(pool),
     ler: criarConsultasDaAplicacao(pool),
+    senha: criarSenhaContaDaAplicacao(pool),
   };
 }
 
@@ -150,6 +156,25 @@ export const acessoRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const resultado = await servicos().gravar.revogarPermissao(ctx.user.id, input.usuarioId, input.permissao);
+      exigirOk(resultado);
+      return { ok: true as const };
+    }),
+
+  alterarMinhaSenha: protectedProcedure
+    .input(z.object({
+      senhaAtual: z.string().min(1).max(80),
+      novaSenha: z.string().min(1).max(80),
+      confirmacao: z.string().min(1).max(80),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const versao = ctx.user.sessionVersion;
+      const resultado = await servicos().senha.alterarMinhaSenha(
+        ctx.user.id,
+        typeof versao === "number" ? versao : -1,
+        input.senhaAtual,
+        input.novaSenha,
+        input.confirmacao,
+      );
       exigirOk(resultado);
       return { ok: true as const };
     }),

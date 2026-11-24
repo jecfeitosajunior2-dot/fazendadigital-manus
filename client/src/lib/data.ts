@@ -8,6 +8,7 @@ export interface MenuItem {
 
 export const menuItems: MenuItem[] = [
   { label: "Painel de Controle", icon: "fd_panel_chart", path: "/admin/overview" },
+  { label: "Minha conta", icon: "fd_panel_chart", path: "/conta/minha" },
   { label: "Acessos da conta", icon: "fd_panel_chart", path: "/conta/acessos" },
   { label: "Acesso Rápido", icon: "fd_rocket", path: "/primeiro-uso/help" },
   {

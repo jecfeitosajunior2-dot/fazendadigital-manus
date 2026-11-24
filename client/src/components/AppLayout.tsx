@@ -13,7 +13,7 @@ interface AppLayoutProps {
 }
 
 export function AuthGuard({ children }: AppLayoutProps) {
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
   const { data: user, isLoading } = trpc.auth.me.useQuery(undefined, {
     retry: false,
   });
@@ -24,8 +24,12 @@ export function AuthGuard({ children }: AppLayoutProps) {
 
   useEffect(() => {
     if (isLoading) return;
-    if (!user) setLocation("/entrar");
-  }, [user, isLoading, setLocation]);
+    if (!user) {
+      setLocation("/entrar");
+      return;
+    }
+    if (user.precisaTrocarSenha && location !== "/conta/minha") setLocation("/conta/minha");
+  }, [user, isLoading, setLocation, location]);
 
   if (isLoading) {
     return (

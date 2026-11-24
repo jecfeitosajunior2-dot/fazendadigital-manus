@@ -34,6 +34,7 @@ describe("Fase 5.2A — Relatórios independentes fora de circulação", () => {
   it("os demais grupos oficiais continuam no menu", () => {
     expect(menuItems.map(item => item.label)).toEqual([
       "Painel de Controle",
+      "Minha conta",
       "Acessos da conta",
       "Acesso Rápido",
       "Fazendas",
