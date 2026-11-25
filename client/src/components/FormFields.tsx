@@ -86,6 +86,8 @@ export function FormInput({
   id,
   invalid,
   readOnly,
+  autoComplete,
+  name,
   "aria-describedby": ariaDescribedBy,
 }: {
   value: string;
@@ -105,14 +107,18 @@ export function FormInput({
   id?: string;
   invalid?: boolean;
   readOnly?: boolean;
+  autoComplete?: string;
+  name?: string;
   "aria-describedby"?: string;
 }) {
   if (variant === "light") {
     return (
       <input
         id={id}
+        name={name}
         type={type}
         inputMode={inputMode}
+        autoComplete={autoComplete}
         value={value}
         readOnly={readOnly}
         onChange={e => {
@@ -143,8 +149,10 @@ export function FormInput({
     <FieldBox required={required} variant={variant} invalid={invalid}>
       <input
         id={id}
+        name={name}
         type={type}
         inputMode={inputMode}
+        autoComplete={autoComplete}
         value={value}
         readOnly={readOnly}
         onChange={e => {

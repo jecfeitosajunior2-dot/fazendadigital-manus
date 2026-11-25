@@ -99,7 +99,7 @@ export const menuItems: MenuItem[] = [
     icon: "fd_admin_gear_check",
     children: [
       { label: "Fazendas", icon: "", path: "/fazendas/lista-fazendas" },
-      { label: "Pessoas e Empresas", icon: "", path: "/financeiro/pessoas" },
+      { label: "Parceiros", icon: "", path: "/financeiro/pessoas" },
       { label: "Categorias Financeiras", icon: "", path: "/administrativo/categorias-financeiras" },
       { label: "Centro de Custos", icon: "", path: "/administrativo/centros-de-custos" },
       { label: "Usuários e Acessos", icon: "", path: "/conta/acessos" },

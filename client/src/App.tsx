@@ -90,7 +90,8 @@ import ManutencaoFormPage from "./pages/ManutencaoFormPage";
 import SemenEstoquePage from "./pages/SemenEstoquePage";
 import SemenUtilizadoPage from "./pages/SemenUtilizadoPage";
 import SemenEntradaResumoPage from "./pages/SemenEntradaResumoPage";
-import { CategoriasFinanceirasPendentePage, CentrosCustoPendentePage } from "./pages/AdministrativoPendentePage";
+import CategoriasFinanceirasPage from "./pages/CategoriasFinanceirasPage";
+import { CentrosCustoPendentePage } from "./pages/AdministrativoPendentePage";
 import { MANEJO_REPRODUTIVO_PATH } from "./const";
 import { SEMEN_CADASTRO_PATH, SEMEN_ESTOQUE_PATH, SEMEN_UTILIZADO_PATH } from "./lib/semenRoutes";
 
@@ -130,7 +131,7 @@ function ProtectedRoutes() {
 
       {/* Administrativo */}
       <Route path="/administrativo/visao-geral" component={RedirectAdministrativoFazendas} />
-      <Route path="/administrativo/categorias-financeiras" component={CategoriasFinanceirasPendentePage} />
+      <Route path="/administrativo/categorias-financeiras" component={CategoriasFinanceirasPage} />
       <Route path="/administrativo/centros-de-custos" component={CentrosCustoPendentePage} />
       <Route path="/benfeitorias/visao-geral" component={() => <RedirectTo to="/fazendas/benfeitorias" />} />
       <Route path="/benfeitorias/lista-benfeitorias" component={() => <RedirectTo to="/fazendas/benfeitorias" />} />
@@ -245,6 +246,7 @@ function ProtectedRoutes() {
       <Route path="/financeiro/contas" component={() => <RedirectTo to={FINANCEIRO_CONTAS_V2_PATH} />} />
       <Route path="/financeiro/movimentacao" component={() => <RedirectTo to={FINANCEIRO_CONTAS_V2_PATH} />} />
       <Route path="/financeiro/categorias" component={() => <RedirectTo to="/financeiro/visao-geral" />} />
+      <Route path="/financeiro/pessoas/cadastro" component={FinancialPeoplePage} />
       <Route path="/financeiro/pessoas" component={FinancialPeoplePage} />
       <Route path="/financeiro/relatorios" component={FinanceiroRelatoriosPage} />
 

@@ -6,16 +6,14 @@ import { toast } from "sonner";
 import { ESTADOS_BR, fetchCidadesPorEstado } from "@/lib/brazil-locations";
 import { SelectItem } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { formatCpfCnpj, formatCurrencyBrl, parseCurrencyBrl } from "@/lib/utils";
+import { formatCpfCnpj, formatCurrencyBrl } from "@/lib/utils";
 import { useConfirm } from "@/components/ConfirmDialog";
 import {
-  conferirAreas,
+  conferirPastagem,
   documentoBrConsistente,
   exibirAreaSalva,
   interpretarArea,
   formatarAreaPtBr,
-  paisInicial,
   ufDoBrasil,
 } from "@shared/fazendaCadastro";
 import {
@@ -24,16 +22,13 @@ import {
   FormInput,
   FormSelect,
   FormNativeSelect,
-  FormTextarea,
 } from "@/components/FormFields";
 
 /** Ordem visual dos campos obrigatórios no cadastro simples. */
 const CAMPOS_OBRIGATORIOS = [
   "nome",
-  "pais",
   "estado",
   "cidade",
-  "unidadeArea",
   "area",
   "atividadePrincipal",
 ] as const;
@@ -42,20 +37,16 @@ type CampoObrigatorio = (typeof CAMPOS_OBRIGATORIOS)[number];
 
 const MSG_LOCAL_OBRIGATORIO: Record<CampoObrigatorio, string> = {
   nome: "Informe o nome da Fazenda.",
-  pais: "Selecione o País.",
   estado: "Selecione o Estado.",
   cidade: "Selecione o Município.",
-  unidadeArea: "Selecione a unidade de medida da área.",
   area: "Informe a área total da Fazenda.",
   atividadePrincipal: "Selecione a atividade principal da Fazenda.",
 };
 
 const MSG_TOAST_OBRIGATORIO: Record<CampoObrigatorio, string> = {
   nome: "Nome da Fazenda é obrigatório.",
-  pais: "País é obrigatório.",
   estado: "Estado é obrigatório.",
   cidade: "Município é obrigatório.",
-  unidadeArea: "Unidade de medida da área é obrigatória.",
   area: "Área total é obrigatória.",
   atividadePrincipal: "Atividade principal da Fazenda é obrigatória.",
 };
@@ -77,19 +68,15 @@ function FieldErrorMsg({ id, message }: { id: string; message?: string }) {
 
 function coletarErrosObrigatorios(form: {
   nome: string;
-  pais: string;
   estado: string;
   cidade: string;
-  unidadeArea: string;
   area: string;
   atividadePrincipal: string;
 }): Partial<Record<CampoObrigatorio, string>> {
   const erros: Partial<Record<CampoObrigatorio, string>> = {};
   if (!form.nome.trim()) erros.nome = MSG_LOCAL_OBRIGATORIO.nome;
-  if (!form.pais) erros.pais = MSG_LOCAL_OBRIGATORIO.pais;
   if (!form.estado) erros.estado = MSG_LOCAL_OBRIGATORIO.estado;
   if (!form.cidade) erros.cidade = MSG_LOCAL_OBRIGATORIO.cidade;
-  if (!form.unidadeArea) erros.unidadeArea = MSG_LOCAL_OBRIGATORIO.unidadeArea;
   if (!form.area.trim()) erros.area = MSG_LOCAL_OBRIGATORIO.area;
   if (!form.atividadePrincipal) erros.atividadePrincipal = MSG_LOCAL_OBRIGATORIO.atividadePrincipal;
   return erros;
@@ -119,6 +106,7 @@ type FormState = {
   cidade: string;
   unidadeArea: string;
   area: string;
+  areaPastagem: string;
   areaReserva: string;
   areaLiquida: string;
   endereco: string;
@@ -139,6 +127,7 @@ type FormState = {
   matriculasImovel: string[];
   tipoPosse: string;
   possuiSisbov: string;
+  codigoSisbov: string;
   razaoSocial: string;
   latitude: string;
   longitude: string;
@@ -159,11 +148,12 @@ const emptyForm = (): FormState => ({
   nome: "",
   sigla: "",
   responsavel: "",
-  pais: paisInicial(null),
+  pais: "Brasil",
   estado: "",
   cidade: "",
   unidadeArea: "Hectare",
   area: "",
+  areaPastagem: "",
   areaReserva: "",
   areaLiquida: "",
   endereco: "",
@@ -184,6 +174,7 @@ const emptyForm = (): FormState => ({
   matriculasImovel: [""],
   tipoPosse: "",
   possuiSisbov: "nao",
+  codigoSisbov: "",
   razaoSocial: "",
   latitude: "",
   longitude: "",
@@ -253,11 +244,12 @@ function mapFazendaToForm(fazenda: Record<string, unknown>): FormState {
     nome: String(fazenda.nome ?? ""),
     sigla: String(fazenda.sigla ?? ""),
     responsavel: String(fazenda.responsavel ?? ""),
-    pais: String(fazenda.pais ?? "").trim() || paisInicial(null),
+    pais: "Brasil",
     estado: estadoUf,
     cidade: cidadeSalva,
     unidadeArea: String(fazenda.unidadeArea ?? "Hectare"),
     area: exibirAreaSalva(fazenda.area),
+    areaPastagem: exibirAreaSalva(fazenda.areaPastagem),
     areaReserva: exibirAreaSalva(fazenda.areaReserva),
     areaLiquida: exibirAreaSalva(fazenda.areaLiquida),
     endereco: String(fazenda.endereco ?? ""),
@@ -280,6 +272,7 @@ function mapFazendaToForm(fazenda: Record<string, unknown>): FormState {
       : [String(fazenda.matriculaImovel ?? "")].filter(Boolean),
     tipoPosse: String(fazenda.tipoPosse ?? ""),
     possuiSisbov: fazenda.possuiSisbov === true ? "sim" : fazenda.possuiSisbov === false ? "nao" : "nao",
+    codigoSisbov: String(fazenda.codigoSisbov ?? ""),
     razaoSocial: String(fazenda.razaoSocial ?? ""),
     latitude: String(fazenda.latitude ?? ""),
     longitude: String(fazenda.longitude ?? ""),
@@ -360,22 +353,6 @@ function parseResponsavelOperacionalFuncao(stored: string) {
   return { responsavelOperacionalFuncaoSelect: "Outro", responsavelOperacionalFuncaoOutro: funcao };
 }
 
-function buildResponsavelOperacionalFuncao(select: string, outro: string) {
-  if (!select) return undefined;
-  if (select === "Outro") {
-    const descricao = outro.trim();
-    return descricao || undefined;
-  }
-  return select;
-}
-
-const PAIS_OPTIONS = [
-  { value: "Brasil", label: "Brasil" },
-  { value: "Argentina", label: "Argentina" },
-  { value: "Paraguai", label: "Paraguai" },
-  { value: "Uruguai", label: "Uruguai" },
-] as const;
-
 function parseFazendaId(search: string): number | null {
   const query = search.startsWith("?") ? search.slice(1) : search;
   const idParam = new URLSearchParams(query).get("id");
@@ -394,14 +371,7 @@ function possuiComplemento(formulario: FormState): boolean {
     || formulario.numeroCar.trim()
     || formulario.matriculasImovel.some(item => item.trim())
     || formulario.tipoPosse.trim()
-    || formulario.possuiSisbov === "sim"
-    || formulario.latitude.trim()
-    || formulario.longitude.trim()
-    || formulario.distanciaMunicipio.trim()
-    || formulario.valorHectare.trim()
-    || formulario.responsavelOperacionalNome.trim()
-    || formulario.responsavelOperacionalTelefone.trim()
-    || formulario.responsavelOperacionalFuncaoSelect.trim()
+    || formulario.codigoSisbov.trim()
   );
 }
 
@@ -451,7 +421,7 @@ export function FarmRegistrationPage() {
   const [errosObrigatorios, setErrosObrigatorios] = useState<
     Partial<Record<CampoObrigatorio, string>>
   >({});
-  const [errosArea, setErrosArea] = useState<{ area?: string; areaReserva?: string }>({});
+  const [errosArea, setErrosArea] = useState<{ area?: string; areaPastagem?: string }>({});
   const [erroDocumento, setErroDocumento] = useState("");
   const baseRef = React.useRef("");
   const tentativaValidacao = Object.keys(errosObrigatorios).length > 0;
@@ -489,11 +459,6 @@ export function FarmRegistrationPage() {
 
   useEffect(() => {
     if (isEdit && !fazenda) return;
-    if (form.pais !== "Brasil") {
-      setCidades([]);
-      setLoadingCidades(false);
-      return;
-    }
     if (!form.estado || !ufDoBrasil(form.estado)) {
       setCidades([]);
       return;
@@ -561,24 +526,12 @@ export function FarmRegistrationPage() {
     }
   };
 
-  const setPais = (pais: string) => {
-    setForm(atual => (atual.pais === pais ? atual : { ...atual, pais, estado: "", cidade: "" }));
-    setCidades([]);
-    setErrosObrigatorios(prev => {
-      const next = { ...prev };
-      delete next.pais;
-      delete next.estado;
-      delete next.cidade;
-      return next;
-    });
-  };
-
-  const formatarAreaDigitada = (campo: "area" | "areaReserva", valor: string) => {
+  const formatarAreaDigitada = (campo: "area" | "areaPastagem", valor: string) => {
     const lida = interpretarArea(valor);
     if (lida.ok && !lida.vazia) set(campo, formatarAreaPtBr(lida.centavos));
-    const areas = conferirAreas(
+    const areas = conferirPastagem(
       campo === "area" ? valor : form.area,
-      campo === "areaReserva" ? valor : form.areaReserva,
+      campo === "areaPastagem" ? valor : form.areaPastagem,
     );
     setErrosArea(areas.erros);
   };
@@ -618,14 +571,13 @@ export function FarmRegistrationPage() {
 
   const payload = () => ({
     nome: form.nome.trim(),
-    sigla: form.sigla || undefined,
     responsavel: form.responsavel || undefined,
-    pais: form.pais || undefined,
+    pais: "Brasil",
     estado: form.estado || undefined,
     cidade: form.cidade || undefined,
-    unidadeArea: form.unidadeArea || undefined,
+    unidadeArea: form.unidadeArea || "Hectare",
     area: form.area || undefined,
-    areaReserva: form.areaReserva || undefined,
+    areaPastagem: form.areaPastagem,
     endereco: form.endereco || undefined,
     atividadePrincipal: form.atividadePrincipal || undefined,
     atividadeCria: form.atividadeCria,
@@ -647,19 +599,8 @@ export function FarmRegistrationPage() {
       return matriculas.length ? JSON.stringify(matriculas) : undefined;
     })(),
     tipoPosse: form.tipoPosse || undefined,
-    possuiSisbov: form.possuiSisbov === "sim",
+    codigoSisbov: form.codigoSisbov,
     razaoSocial: form.razaoSocial || undefined,
-    latitude: form.latitude || undefined,
-    longitude: form.longitude || undefined,
-    distanciaMunicipio: form.distanciaMunicipio || undefined,
-    valorHectare: parseCurrencyBrl(form.valorHectare) || undefined,
-    responsavelOperacionalNome: form.responsavelOperacionalNome || undefined,
-    responsavelOperacionalTelefone: form.responsavelOperacionalTelefone || undefined,
-    responsavelOperacionalFuncao: buildResponsavelOperacionalFuncao(
-      form.responsavelOperacionalFuncaoSelect,
-      form.responsavelOperacionalFuncaoOutro,
-    ),
-    observacoes: form.observacoes || undefined,
   });
 
   const createMutation = trpc.fazendas.create.useMutation({
@@ -695,20 +636,18 @@ export function FarmRegistrationPage() {
       return;
     }
 
-    const areas = conferirAreas(form.area, form.areaReserva);
-    if (areas.erros.area || areas.erros.areaReserva) {
+    const areas = conferirPastagem(form.area, form.areaPastagem);
+    if (areas.erros.area || areas.erros.areaPastagem) {
       setErrosArea(areas.erros);
-      toast.error(areas.erros.area || areas.erros.areaReserva || "Revise as áreas.");
+      toast.error(areas.erros.area || areas.erros.areaPastagem || "Revise as áreas.");
       return;
     }
-    if (form.pais === "Brasil") {
-      const documento = documentoBrConsistente(form.cpfCnpj);
-      if (documento !== true) {
-        setErroDocumento(documento);
-        setCadastroAvancado(true);
-        toast.error(documento);
-        return;
-      }
+    const documento = documentoBrConsistente(form.cpfCnpj);
+    if (documento !== true) {
+      setErroDocumento(documento);
+      setCadastroAvancado(true);
+      toast.error(documento);
+      return;
     }
     setErrosObrigatorios({});
     setErrosArea({});
@@ -721,9 +660,6 @@ export function FarmRegistrationPage() {
   };
 
   const formSyncedForEdit = !isEdit || (hydratedKey === hydrationKey && hydrationKey !== "");
-  const areasAtuais = conferirAreas(form.area, form.areaReserva);
-  const areaLiquidaExibida = areasAtuais.liquida == null ? "" : formatarAreaPtBr(areasAtuais.liquida);
-  const brasil = form.pais === "Brasil";
   const sair = async () => {
     if (JSON.stringify(form) !== baseRef.current) {
       const ok = await confirm({
@@ -828,14 +764,14 @@ export function FarmRegistrationPage() {
             <FormSection
               title="Cadastro Simples"
             >
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                 <div className="scroll-mt-24">
                   <FormLabel required>Nome da Fazenda</FormLabel>
                   <FormInput variant="light"
                     id={fieldDomId("nome")}
                     value={form.nome}
                     onChange={v => set("nome", v)}
-                    placeholder="Ex. Fazenda Santa Maria"
+                    placeholder=""
                     required
                     invalid={!!errosObrigatorios.nome}
                     aria-describedby={errosObrigatorios.nome ? "fazenda-err-nome" : undefined}
@@ -843,120 +779,58 @@ export function FarmRegistrationPage() {
                   <FieldErrorMsg id="fazenda-err-nome" message={errosObrigatorios.nome} />
                 </div>
                 <div>
-                  <FormLabel>Sigla da Fazenda</FormLabel>
-                  <FormInput variant="light" value={form.sigla} onChange={v => set("sigla", v)} placeholder="Ex. FSM" />
-                </div>
-                <div>
                   <FormLabel>Nome do Proprietário</FormLabel>
-                  <FormInput variant="light" value={form.responsavel} onChange={v => set("responsavel", v)} placeholder="Dono do imóvel" />
+                  <FormInput variant="light" value={form.responsavel} onChange={v => set("responsavel", v)} />
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4 items-start">
-                <div className="scroll-mt-24">
-                  <FormLabel required>País</FormLabel>
-                  <FormNativeSelect variant="light"
-                    id={fieldDomId("pais")}
-                    value={form.pais}
-                    onChange={setPais}
-                    placeholder="Selecione"
-                    required
-                    displayValue={form.pais}
-                    options={PAIS_OPTIONS}
-                    invalid={!!errosObrigatorios.pais}
-                    aria-describedby={errosObrigatorios.pais ? "fazenda-err-pais" : undefined}
-                  />
-                  <FieldErrorMsg id="fazenda-err-pais" message={errosObrigatorios.pais} />
-                </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4 items-start">
                 <div className="scroll-mt-24">
                   <FormLabel required>Estado</FormLabel>
-                  {brasil ? (
-                    <FormSelect variant="light"
-                      id={fieldDomId("estado")}
-                      value={form.estado}
-                      onChange={setEstado}
-                      placeholder="Selecione"
-                      required
-                      displayValue={estadoDisplayName}
-                      invalid={!!errosObrigatorios.estado}
-                      aria-describedby={errosObrigatorios.estado ? "fazenda-err-estado" : undefined}
-                    >
-                      {estadoOptions.map(o => (
-                        <SelectItem key={o.value} value={o.value} className="text-[13px]">
-                          {o.label}
-                        </SelectItem>
-                      ))}
-                    </FormSelect>
-                  ) : (
-                    <FormInput variant="light"
-                      id={fieldDomId("estado")}
-                      value={form.estado}
-                      onChange={v => set("estado", v.toUpperCase().slice(0, 2))}
-                      placeholder="Sigla"
-                      invalid={!!errosObrigatorios.estado}
-                      aria-describedby={errosObrigatorios.estado ? "fazenda-err-estado" : undefined}
-                    />
-                  )}
-                  {!brasil && (
-                    <p className="mt-1 text-[10px] text-gray-400">Fora do Brasil, informe a sigla de duas letras.</p>
-                  )}
+                  <FormSelect variant="light"
+                    id={fieldDomId("estado")}
+                    value={form.estado}
+                    onChange={setEstado}
+                    placeholder="Selecione"
+                    required
+                    displayValue={estadoDisplayName}
+                    invalid={!!errosObrigatorios.estado}
+                    aria-describedby={errosObrigatorios.estado ? "fazenda-err-estado" : undefined}
+                  >
+                    {estadoOptions.map(o => (
+                      <SelectItem key={o.value} value={o.value} className="text-[13px]">
+                        {o.label}
+                      </SelectItem>
+                    ))}
+                  </FormSelect>
                   <FieldErrorMsg id="fazenda-err-estado" message={errosObrigatorios.estado} />
                 </div>
                 <div className="scroll-mt-24">
                   <FormLabel required>Município</FormLabel>
-                  {brasil ? (
-                    <FormSelect variant="light"
-                      id={fieldDomId("cidade")}
-                      value={form.cidade}
-                      onChange={v => set("cidade", v)}
-                      placeholder={municipioPlaceholder}
-                      disabled={!form.estado || loadingCidades}
-                      required
-                      displayValue={form.cidade}
-                      invalid={!!errosObrigatorios.cidade}
-                      aria-describedby={errosObrigatorios.cidade ? "fazenda-err-cidade" : undefined}
-                    >
-                      {municipioOptions.map(o => (
-                        <SelectItem key={o.value} value={o.value} className="text-[13px]">
-                          {o.label}
-                        </SelectItem>
-                      ))}
-                    </FormSelect>
-                  ) : (
-                    <FormInput variant="light"
-                      id={fieldDomId("cidade")}
-                      value={form.cidade}
-                      onChange={v => set("cidade", v)}
-                      placeholder="Município"
-                      invalid={!!errosObrigatorios.cidade}
-                      aria-describedby={errosObrigatorios.cidade ? "fazenda-err-cidade" : undefined}
-                    />
-                  )}
+                  <FormSelect variant="light"
+                    id={fieldDomId("cidade")}
+                    value={form.cidade}
+                    onChange={v => set("cidade", v)}
+                    placeholder={municipioPlaceholder}
+                    disabled={!form.estado || loadingCidades}
+                    required
+                    displayValue={form.cidade}
+                    invalid={!!errosObrigatorios.cidade}
+                    aria-describedby={errosObrigatorios.cidade ? "fazenda-err-cidade" : undefined}
+                  >
+                    {municipioOptions.map(o => (
+                      <SelectItem key={o.value} value={o.value} className="text-[13px]">
+                        {o.label}
+                      </SelectItem>
+                    ))}
+                  </FormSelect>
                   <FieldErrorMsg id="fazenda-err-cidade" message={errosObrigatorios.cidade} />
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                 <div className="scroll-mt-24">
-                  <FormLabel required>Unidade de Medida da Área</FormLabel>
-                  <FormSelect variant="light"
-                    id={fieldDomId("unidadeArea")}
-                    value={form.unidadeArea}
-                    onChange={v => set("unidadeArea", v)}
-                    placeholder="Selecione"
-                    required
-                    displayValue={form.unidadeArea}
-                    invalid={!!errosObrigatorios.unidadeArea}
-                    aria-describedby={errosObrigatorios.unidadeArea ? "fazenda-err-unidadeArea" : undefined}
-                  >
-                    <SelectItem value="Hectare" className="text-[13px]">Hectare</SelectItem>
-                    <SelectItem value="Alqueire" className="text-[13px]">Alqueire</SelectItem>
-                    <SelectItem value="Metro²" className="text-[13px]">Metro²</SelectItem>
-                  </FormSelect>
-                  <FieldErrorMsg id="fazenda-err-unidadeArea" message={errosObrigatorios.unidadeArea} />
-                </div>
-                <div className="scroll-mt-24">
-                  <FormLabel required>Área Total da Fazenda</FormLabel>
+                  <FormLabel required>Área Total da Fazenda (ha)</FormLabel>
                   <FormInput variant="light"
                     id={fieldDomId("area")}
                     value={form.area}
@@ -965,7 +839,7 @@ export function FarmRegistrationPage() {
                       if (errosArea.area) setErrosArea(prev => ({ ...prev, area: undefined }));
                     }}
                     onBlur={v => formatarAreaDigitada("area", v)}
-                    placeholder="0,00"
+                    placeholder=""
                     inputMode="decimal"
                     required
                     invalid={!!errosObrigatorios.area || !!errosArea.area}
@@ -974,24 +848,20 @@ export function FarmRegistrationPage() {
                   <FieldErrorMsg id="fazenda-err-area" message={errosObrigatorios.area || errosArea.area} />
                 </div>
                 <div>
-                  <FormLabel>Área de Reserva</FormLabel>
+                  <FormLabel>Área de Pastagem (ha)</FormLabel>
                   <FormInput variant="light"
-                    value={form.areaReserva}
+                    value={form.areaPastagem}
                     onChange={v => {
-                      set("areaReserva", v);
-                      if (errosArea.areaReserva) setErrosArea(prev => ({ ...prev, areaReserva: undefined }));
+                      set("areaPastagem", v);
+                      if (errosArea.areaPastagem) setErrosArea(prev => ({ ...prev, areaPastagem: undefined }));
                     }}
-                    onBlur={v => formatarAreaDigitada("areaReserva", v)}
-                    placeholder="0,00"
+                    onBlur={v => formatarAreaDigitada("areaPastagem", v)}
+                    placeholder=""
                     inputMode="decimal"
-                    invalid={!!errosArea.areaReserva}
+                    invalid={!!errosArea.areaPastagem}
+                    aria-describedby={errosArea.areaPastagem ? "fazenda-err-pastagem" : undefined}
                   />
-                  <FieldErrorMsg id="fazenda-err-reserva" message={errosArea.areaReserva} />
-                </div>
-                <div>
-                  <FormLabel>Área Líquida da Fazenda</FormLabel>
-                  <FormInput variant="light" value={areaLiquidaExibida} onChange={() => undefined} readOnly placeholder="0,00" />
-                  <p className="mt-1 text-[10px] text-gray-400">Calculada automaticamente: Área Total - Área de Reserva</p>
+                  <FieldErrorMsg id="fazenda-err-pastagem" message={errosArea.areaPastagem} />
                 </div>
               </div>
 
@@ -1018,19 +888,8 @@ export function FarmRegistrationPage() {
                 </div>
                 <div className="lg:col-span-8">
                   <FormLabel>Endereço da Fazenda</FormLabel>
-                  <FormInput variant="light" value={form.endereco} onChange={v => set("endereco", v)} placeholder="Rodovia, km, referência..." />
+                  <FormInput variant="light" value={form.endereco} onChange={v => set("endereco", v)} />
                 </div>
-              </div>
-
-              <div>
-                <FormLabel>Observação</FormLabel>
-                <FormTextarea
-                  variant="light"
-                  value={form.observacoes}
-                  onChange={v => set("observacoes", v)}
-                  placeholder="Informações adicionais sobre a fazenda..."
-                  rows={4}
-                />
               </div>
             </FormSection>
 
@@ -1042,7 +901,7 @@ export function FarmRegistrationPage() {
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div>
                       <FormLabel>Razão Social</FormLabel>
-                      <FormInput variant="light" value={form.razaoSocial} onChange={v => set("razaoSocial", v)} placeholder="Nome empresarial, se houver" />
+                      <FormInput variant="light" value={form.razaoSocial} onChange={v => set("razaoSocial", v)} />
                     </div>
                     <div>
                       <FormLabel>CPF/CNPJ</FormLabel>
@@ -1052,14 +911,14 @@ export function FarmRegistrationPage() {
                           set("cpfCnpj", formatCpfCnpj(v));
                           if (erroDocumento) setErroDocumento("");
                         }}
-                        placeholder={form.cpfCnpj.replace(/\D/g, "").length > 11 ? "00.000.000/0000-00" : "000.000.000-00"}
+                        placeholder=""
                         invalid={!!erroDocumento}
                       />
                       <FieldErrorMsg id="fazenda-err-documento" message={erroDocumento} />
                     </div>
                     <div>
                       <FormLabel>Inscrição Estadual</FormLabel>
-                      <FormInput variant="light" value={form.inscricaoEstadual} onChange={v => set("inscricaoEstadual", v)} placeholder="Opcional" />
+                      <FormInput variant="light" value={form.inscricaoEstadual} onChange={v => set("inscricaoEstadual", v)} placeholder="" />
                     </div>
                   </div>
                 </FormSection>
@@ -1067,27 +926,29 @@ export function FarmRegistrationPage() {
                 <FormSection
                   title="Documentação Rural"
                 >
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
                     <div>
                       <FormLabel>Registro INCRA</FormLabel>
-                      <FormInput variant="light" value={form.registroIncra} onChange={v => set("registroIncra", v)} placeholder="Opcional" />
+                      <FormInput variant="light" value={form.registroIncra} onChange={v => set("registroIncra", v)} placeholder="" />
                     </div>
                     <div>
                       <FormLabel>NIRF</FormLabel>
-                      <FormInput variant="light" value={form.nirf} onChange={v => set("nirf", v)} placeholder="Opcional" />
+                      <FormInput variant="light" value={form.nirf} onChange={v => set("nirf", v)} placeholder="" />
                     </div>
                     <div>
                       <FormLabel>Número do CAR</FormLabel>
-                      <FormInput variant="light" value={form.numeroCar} onChange={v => set("numeroCar", v)} placeholder="Opcional" />
+                      <FormInput variant="light" value={form.numeroCar} onChange={v => set("numeroCar", v)} placeholder="" />
                     </div>
-                    <div className="lg:col-span-2">
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
                       <FormLabel>Matrícula do Imóvel</FormLabel>
                       <FormInput variant="light"
                         value={form.matriculasImovel[0] || ""}
                         onChange={v => {
                           setForm(f => ({ ...f, matriculasImovel: [v] }));
                         }}
-                        placeholder="Opcional"
+                        placeholder=""
                       />
                     </div>
                     <div>
@@ -1107,50 +968,10 @@ export function FarmRegistrationPage() {
                 <FormSection
                   title="SISBOV"
                 >
-                  <RadioGroup
-                    value={form.possuiSisbov}
-                    onValueChange={v => set("possuiSisbov", v)}
-                    className="flex gap-6"
-                  >
-                      <label className="flex items-center gap-2 text-[13px] text-gray-700 cursor-pointer">
-                        <RadioGroupItem value="sim" className="border-gray-400 text-[#4ECDC4]" />
-                        Sim
-                      </label>
-                      <label className="flex items-center gap-2 text-[13px] text-gray-700 cursor-pointer">
-                        <RadioGroupItem value="nao" className="border-gray-400 text-[#4ECDC4]" />
-                        Não
-                      </label>
-                    </RadioGroup>
-                </FormSection>
-
-                <FormSection
-                  title="Localização"
-                >
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div>
-                      <FormLabel>Latitude</FormLabel>
-                      <FormInput variant="light" value={form.latitude} onChange={v => set("latitude", v)} placeholder="-16.6869" />
-                    </div>
-                    <div>
-                      <FormLabel>Longitude</FormLabel>
-                      <FormInput variant="light" value={form.longitude} onChange={v => set("longitude", v)} placeholder="-49.2648" />
-                    </div>
-                    <div>
-                      <FormLabel>Distância da sede do município (Km)</FormLabel>
-                      <FormInput variant="light" value={form.distanciaMunicipio} onChange={v => set("distanciaMunicipio", v)} placeholder="0" type="number" />
-                    </div>
-                  </div>
-                </FormSection>
-
-                <FormSection title="Avaliação Patrimonial">
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <div>
-                      <FormLabel>Valor estimado do hectare</FormLabel>
-                      <FormInput variant="light"
-                        value={form.valorHectare}
-                        onChange={v => set("valorHectare", formatCurrencyBrl(v))}
-                        placeholder="R$ 0,00"
-                      />
+                      <FormLabel>Código da fazenda</FormLabel>
+                      <FormInput variant="light" value={form.codigoSisbov} onChange={v => set("codigoSisbov", v)} />
                     </div>
                   </div>
                 </FormSection>
@@ -1181,48 +1002,6 @@ export function FarmRegistrationPage() {
                   </div>
                 </div>
 
-                <FormSection title="Responsável Operacional">
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <div>
-                      <FormLabel>Nome</FormLabel>
-                      <FormInput variant="light" value={form.responsavelOperacionalNome} onChange={v => set("responsavelOperacionalNome", v)} placeholder="Opcional" />
-                    </div>
-                    <div>
-                      <FormLabel>Telefone / WhatsApp</FormLabel>
-                      <FormInput variant="light"
-                        value={form.responsavelOperacionalTelefone}
-                        onChange={v => set("responsavelOperacionalTelefone", formatPhoneBR(v))}
-                        placeholder="(00) 00000-0000"
-                        inputMode="numeric"
-                      />
-                    </div>
-                    <div>
-                      <FormLabel>Função</FormLabel>
-                      <FormSelect variant="light"
-                        value={form.responsavelOperacionalFuncaoSelect}
-                        onChange={v => set("responsavelOperacionalFuncaoSelect", v)}
-                        placeholder="Selecione a função"
-                        displayValue={form.responsavelOperacionalFuncaoSelect}
-                      >
-                        {RESPONSAVEL_FUNCAO_OPTIONS.map(o => (
-                          <SelectItem key={o.value} value={o.value} className="text-[13px]">
-                            {o.label}
-                          </SelectItem>
-                        ))}
-                      </FormSelect>
-                    </div>
-                    {form.responsavelOperacionalFuncaoSelect === "Outro" && (
-                      <div className="sm:col-span-3">
-                        <FormLabel>Especificar função</FormLabel>
-                        <FormInput variant="light"
-                          value={form.responsavelOperacionalFuncaoOutro}
-                          onChange={v => set("responsavelOperacionalFuncaoOutro", v)}
-                          placeholder="Descreva a função"
-                        />
-                      </div>
-                    )}
-                  </div>
-                </FormSection>
               </div>
             )}
           </div>

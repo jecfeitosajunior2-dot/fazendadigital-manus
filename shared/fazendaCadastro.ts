@@ -107,6 +107,21 @@ export function conferirAreas(area: unknown, reserva: unknown): {
   };
 }
 
+/** Pastagem digitada no cadastro. Não desconta da área total e não mexe na reserva. */
+export function conferirPastagem(area: unknown, pastagem: unknown): {
+  erros: { area?: string; areaPastagem?: string };
+} {
+  const total = interpretarArea(area);
+  const pasto = interpretarArea(pastagem);
+  const erros: { area?: string; areaPastagem?: string } = {};
+  if (!total.ok) erros.area = total.mensagem;
+  if (!pasto.ok) erros.areaPastagem = pasto.mensagem;
+  if (total.ok && !total.vazia && pasto.ok && !pasto.vazia && pasto.centavos > total.centavos) {
+    erros.areaPastagem = "A área de pastagem não pode ser maior que a área total.";
+  }
+  return { erros };
+}
+
 function mesmoDigito(digitos: string): boolean {
   return /^(\d)\1+$/.test(digitos);
 }
@@ -166,15 +181,30 @@ export function prepararCamposFazenda(entrada: Record<string, unknown>):
     if (documento !== true) return { ok: false, mensagem: documento };
   }
 
-  if (dados.area !== undefined || dados.areaReserva !== undefined) {
+  if (dados.areaPastagem !== undefined) {
+    const pastagem = interpretarArea(dados.areaPastagem);
+    if (!pastagem.ok) return { ok: false, mensagem: pastagem.mensagem };
+    dados.areaPastagem = pastagem.vazia ? null : pastagem.valor;
+  }
+
+  if (dados.areaReserva !== undefined) {
     const areas = conferirAreas(dados.area ?? "", dados.areaReserva ?? "");
     const mensagem = areas.erros.area || areas.erros.areaReserva;
     if (mensagem) return { ok: false, mensagem };
     if (dados.area !== undefined) dados.area = areas.total;
-    if (dados.areaReserva !== undefined) dados.areaReserva = areas.reserva;
+    dados.areaReserva = areas.reserva;
     if (dados.area !== undefined && areas.liquida != null) {
       dados.areaLiquida = (areas.liquida / 100).toFixed(2);
     }
+  } else if (dados.area !== undefined) {
+    const total = interpretarArea(dados.area);
+    if (!total.ok) return { ok: false, mensagem: total.mensagem };
+    dados.area = total.vazia ? null : total.valor;
+  }
+
+  if (dados.area != null && dados.areaPastagem != null) {
+    const comparacao = conferirPastagem(dados.area, dados.areaPastagem);
+    if (comparacao.erros.areaPastagem) return { ok: false, mensagem: comparacao.erros.areaPastagem };
   }
 
   return { ok: true, dados };

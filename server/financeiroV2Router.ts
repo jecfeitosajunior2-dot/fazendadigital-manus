@@ -408,6 +408,43 @@ export const financeiroV2Router = router({
       ));
     }),
 
+  categoriasRenomear: protectedProcedure
+    .input(z.object({
+      id: z.number().int().positive(),
+      nome: z.string().min(1).max(120),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const acesso = await donoDaOperacao(ctx, PERMISSAO_EDITAR_FINANCEIRO);
+      return gravarFinanceiro(() => financeiroNucleoService.renomearSubcategoria(
+        acesso.titularUserId,
+        input.id,
+        input.nome,
+        sessaoFinanceiro(ctx, PERMISSAO_EDITAR_FINANCEIRO),
+      ));
+    }),
+
+  categoriasDeleteCheck: protectedProcedure
+    .input(z.object({ id: z.number().int().positive() }))
+    .query(async ({ ctx, input }) => {
+      const acesso = await donoDaOperacao(ctx, PERMISSAO_INATIVAR_FINANCEIRO);
+      return gravarFinanceiro(() => financeiroNucleoService.conferirExclusaoSubcategoria(
+        acesso.titularUserId,
+        input.id,
+        sessaoFinanceiro(ctx, PERMISSAO_INATIVAR_FINANCEIRO),
+      ));
+    }),
+
+  categoriasExcluir: protectedProcedure
+    .input(z.object({ id: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      const acesso = await donoDaOperacao(ctx, PERMISSAO_INATIVAR_FINANCEIRO);
+      return gravarFinanceiro(() => financeiroNucleoService.excluirSubcategoria(
+        acesso.titularUserId,
+        input.id,
+        sessaoFinanceiro(ctx, PERMISSAO_INATIVAR_FINANCEIRO),
+      ));
+    }),
+
   centrosList: protectedProcedure.query(async ({ ctx }) => {
     const acesso = await titularDaConsulta(ctx);
     return gravarFinanceiro(() => financeiroNucleoService.listarCentrosCusto(acesso.titularUserId, acesso));

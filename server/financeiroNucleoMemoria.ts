@@ -310,6 +310,12 @@ export function criarStore(opts?: { deadlocksRestantes?: number }): FinanceiroNu
     async listCategorias(userId) {
       return state.categorias.filter(c => c.userId === userId);
     },
+    async contarUsoCategoria(userId, categoriaId) {
+      return state.apropriacoes.filter(item => item.userId === userId && item.categoriaId === categoriaId).length;
+    },
+    async deleteCategoria(userId, id) {
+      state.categorias = state.categorias.filter(item => !(item.id === id && item.userId === userId));
+    },
     async findCentro(userId, centroId) {
       return state.centros.find(c => c.id === centroId && c.userId === userId) ?? null;
     },

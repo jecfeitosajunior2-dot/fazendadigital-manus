@@ -27,10 +27,13 @@ export const MSG_FAZENDA_HISTORICO =
   "Esta fazenda ainda tem concessões ou lançamentos. Esse histórico não é apagado.";
 export const MSG_FAZENDA_VINCULO_OPACO =
   "Não foi possível conferir os vínculos desta fazenda. Nada foi apagado.";
-export const MSG_FAZENDA_EXCLUSAO_BLOQUEADA =
-  "A fazenda não é apagada. Um pasto ou lançamento pode ser confirmado no mesmo instante, e o banco não segura essa brecha. O cadastro permanece.";
 export const MSG_FAZENDA_SITUACAO_INDISPONIVEL =
   "A inativação da fazenda ainda não está disponível neste banco. Nada foi alterado.";
+export const MSG_FAZENDA_CODIGO_SISBOV_INDISPONIVEL =
+  "O código SISBOV da propriedade ainda não está disponível neste banco. Nada foi alterado.";
+
+export const MSG_FAZENDA_PASTAGEM_INDISPONIVEL =
+  "A área de pastagem ainda não está disponível neste banco. Nada foi alterado.";
 
 export type SessaoFazenda = {
   executorId: number;
@@ -180,12 +183,81 @@ const HISTORICO = [
   (id: number) => sql`SELECT COUNT(*) AS n FROM semen_partidas WHERE fazenda_id = ${id}`,
 ];
 
-async function colunaSituacaoExiste(tx: Tx) {
+async function colunaExiste(tx: Tx, coluna: string) {
   const qtd = await contar(
     tx,
-    sql`SELECT COUNT(*) AS n FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'fazendas' AND COLUMN_NAME = 'situacao'`,
+    sql`SELECT COUNT(*) AS n FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'fazendas' AND COLUMN_NAME = ${coluna}`,
   );
   return qtd != null && qtd > 0;
+}
+
+async function colunaSituacaoExiste(tx: Tx) {
+  return colunaExiste(tx, "situacao");
+}
+
+async function pastagensDaConta(tx: Tx, titular: number) {
+  if (!(await colunaExiste(tx, "areaPastagem"))) return null;
+  const resultado = await tx.execute(sql`SELECT id, areaPastagem FROM fazendas WHERE userId = ${titular}`);
+  const pacote = resultado as unknown as [Array<{ id?: number; areaPastagem?: unknown }>, unknown];
+  const linhas = Array.isArray(pacote?.[0]) ? pacote[0] : [];
+  const mapa = new Map<number, string | null>();
+  for (const linha of linhas) {
+    mapa.set(Number(linha.id), linha.areaPastagem == null || linha.areaPastagem === "" ? null : String(linha.areaPastagem));
+  }
+  return mapa;
+}
+
+async function gravarAreaPastagem(tx: Tx, titular: number, id: number, valor: string | null) {
+  await tx.execute(sql`
+    UPDATE fazendas
+    SET areaPastagem = ${valor}
+    WHERE id = ${id} AND userId = ${titular}
+  `);
+}
+
+function separarAreaPastagem(dados: Record<string, unknown>) {
+  const informada = Object.prototype.hasOwnProperty.call(dados, "areaPastagem");
+  const valor = informada ? (dados.areaPastagem == null ? null : String(dados.areaPastagem)) : undefined;
+  delete dados.areaPastagem;
+  return { informada, valor };
+}
+
+async function codigosSisbovDaConta(tx: Tx, titular: number) {
+  if (!(await colunaExiste(tx, "codigoSisbov"))) return null;
+  const resultado = await tx.execute(sql`SELECT id, codigoSisbov FROM fazendas WHERE userId = ${titular}`);
+  const pacote = resultado as unknown as [Array<{ id?: number; codigoSisbov?: unknown }>, unknown];
+  const linhas = Array.isArray(pacote?.[0]) ? pacote[0] : [];
+  const mapa = new Map<number, string | null>();
+  for (const linha of linhas) {
+    const texto = linha.codigoSisbov == null ? "" : String(linha.codigoSisbov).trim();
+    mapa.set(Number(linha.id), texto ? texto : null);
+  }
+  return mapa;
+}
+
+function separarCodigoSisbov(dados: Record<string, unknown>) {
+  const informada = Object.prototype.hasOwnProperty.call(dados, "codigoSisbov");
+  const texto = informada ? (dados.codigoSisbov == null ? "" : String(dados.codigoSisbov).trim()) : "";
+  delete dados.codigoSisbov;
+  return { informada, texto };
+}
+
+function valorCodigoSisbov(texto: string) {
+  if (texto.length > 40) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "O código da fazenda no SISBOV pode ter no máximo 40 caracteres.",
+    });
+  }
+  return texto ? texto : null;
+}
+
+async function gravarCodigoSisbov(tx: Tx, titular: number, id: number, valor: string | null) {
+  await tx.execute(sql`
+    UPDATE fazendas
+    SET codigoSisbov = ${valor}
+    WHERE id = ${id} AND userId = ${titular}
+  `);
 }
 
 async function situacoesDaConta(tx: Tx, titular: number) {
@@ -234,9 +306,16 @@ export const fazendasOperacao = {
       });
       if (!acesso) recusar("sem_identidade");
       const situacoes = await situacoesDaConta(tx, atual.titular);
+      const pastagens = await pastagensDaConta(tx, atual.titular);
+      const codigos = await codigosSisbovDaConta(tx, atual.titular);
       return linhas
         .filter((row) => avaliarAcessoFazenda(acesso, { id: row.id, userId: row.userId }) === "permitido")
-        .map((row) => ({ ...row, situacao: situacoes?.get(row.id) ?? "ativo" }));
+        .map((row) => ({
+          ...row,
+          situacao: situacoes?.get(row.id) ?? "ativo",
+          areaPastagem: pastagens?.get(row.id) ?? null,
+          codigoSisbov: codigos?.get(row.id) ?? null,
+        }));
     });
   },
 
@@ -245,7 +324,9 @@ export const fazendasOperacao = {
       await autorizarFazenda(tx, sessao, id, "fazendas.visualizar");
       const [row] = await tx.select().from(fazendas).where(eq(fazendas.id, id)).limit(1);
       if (!row) recusar("fazenda_inexistente");
-      return row;
+      const pastagens = await pastagensDaConta(tx, row.userId);
+      const codigos = await codigosSisbovDaConta(tx, row.userId);
+      return { ...row, areaPastagem: pastagens?.get(id) ?? null, codigoSisbov: codigos?.get(id) ?? null };
     });
   },
 
@@ -255,8 +336,23 @@ export const fazendasOperacao = {
       const nome = String(entrada.nome ?? "").trim();
       if (!nome) throw new TRPCError({ code: "BAD_REQUEST", message: "Informe o nome da fazenda." });
       const dados = { ...camposLivres(entrada), nome, userId: atual.titular };
+      const pastagem = separarAreaPastagem(dados);
+      const codigo = separarCodigoSisbov(dados);
+      if (pastagem.informada && !(await colunaExiste(tx, "areaPastagem"))) {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_FAZENDA_PASTAGEM_INDISPONIVEL });
+      }
+      if (codigo.informada && !(await colunaExiste(tx, "codigoSisbov"))) {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_FAZENDA_CODIGO_SISBOV_INDISPONIVEL });
+      }
+      const codigoValor = codigo.informada ? valorCodigoSisbov(codigo.texto) : undefined;
       const result = await tx.insert(fazendas).values(dados as typeof fazendas.$inferInsert);
       const id = Number((result as unknown as [{ insertId?: number }])[0]?.insertId ?? 0);
+      if (pastagem.informada && pastagem.valor !== undefined) {
+        await gravarAreaPastagem(tx, atual.titular, id, pastagem.valor);
+      }
+      if (codigo.informada && codigoValor !== undefined) {
+        await gravarCodigoSisbov(tx, atual.titular, id, codigoValor);
+      }
       return { success: true as const, id };
     });
   },
@@ -266,8 +362,23 @@ export const fazendasOperacao = {
       const contexto = await autorizarFazenda(tx, sessao, id, "fazendas.editar");
       await pausaTrava();
       const dados = camposLivres(entrada);
+      const pastagem = separarAreaPastagem(dados);
+      const codigo = separarCodigoSisbov(dados);
+      if (pastagem.informada && !(await colunaExiste(tx, "areaPastagem"))) {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_FAZENDA_PASTAGEM_INDISPONIVEL });
+      }
+      if (codigo.informada && !(await colunaExiste(tx, "codigoSisbov"))) {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_FAZENDA_CODIGO_SISBOV_INDISPONIVEL });
+      }
+      const codigoValor = codigo.informada ? valorCodigoSisbov(codigo.texto) : undefined;
       if (Object.keys(dados).length > 0) {
         await tx.update(fazendas).set(dados).where(and(eq(fazendas.id, id), eq(fazendas.userId, contexto.titularUserId)));
+      }
+      if (pastagem.informada && pastagem.valor !== undefined) {
+        await gravarAreaPastagem(tx, contexto.titularUserId, id, pastagem.valor);
+      }
+      if (codigo.informada && codigoValor !== undefined) {
+        await gravarCodigoSisbov(tx, contexto.titularUserId, id, codigoValor);
       }
       const [row] = await tx.select({ userId: fazendas.userId }).from(fazendas).where(eq(fazendas.id, id)).limit(1);
       if (!row || row.userId !== contexto.titularUserId) recusar("fazenda_inexistente");
@@ -306,12 +417,6 @@ export const fazendasOperacao = {
       if (!row) recusar("fazenda_inexistente");
       const achados = await vinculos(tx, contexto.titularUserId, id);
       if (!achados) throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_FAZENDA_VINCULO_OPACO });
-      if (achados.historico > 0 && achados.blockers.length === 0) {
-        throw new TRPCError({
-          code: "PRECONDITION_FAILED",
-          message: `Não é possível excluir a fazenda "${row.nome}". ${MSG_FAZENDA_HISTORICO}`,
-        });
-      }
       return {
         nome: row.nome,
         blockers: achados.blockers,
@@ -340,7 +445,10 @@ export const fazendasOperacao = {
           message: `Não é possível excluir a fazenda "${row.nome}". ${MSG_FAZENDA_HISTORICO}`,
         });
       }
-      throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_FAZENDA_EXCLUSAO_BLOQUEADA });
+      await tx.delete(fazendas).where(and(eq(fazendas.id, id), eq(fazendas.userId, contexto.titularUserId)));
+      const [ainda] = await tx.select({ id: fazendas.id }).from(fazendas).where(eq(fazendas.id, id)).limit(1);
+      if (ainda) recusar("fazenda_inexistente");
+      return { success: true as const };
     });
   },
 };

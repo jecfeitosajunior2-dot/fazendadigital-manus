@@ -41,6 +41,9 @@ const ROTAS = [
   "categoriasList",
   "categoriasCreate",
   "categoriasInativar",
+  "categoriasRenomear",
+  "categoriasDeleteCheck",
+  "categoriasExcluir",
   "centrosList",
   "centrosCreate",
   "centrosInativar",
@@ -51,7 +54,7 @@ describe("financeiro V2 — contrato da conta", () => {
   const nucleo = ler("financeiroNucleo.ts");
   const routers = ler("routers.ts");
 
-  it("as 25 rotas continuam no roteador e o dono é o titular", () => {
+  it("as rotas continuam no roteador e o dono é o titular", () => {
     for (const rota of ROTAS) expect(router).toContain(`${rota}:`);
     expect(router).not.toContain("financeiroNucleoService.listarContas(ctx.user.id)");
     expect(router).not.toContain("financeiroNucleoService.criarPagamento(ctx.user.id");

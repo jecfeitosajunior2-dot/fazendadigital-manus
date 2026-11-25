@@ -7,6 +7,7 @@ import { menuItems } from "./data";
 const here = dirname(fileURLToPath(import.meta.url));
 const app = readFileSync(resolve(here, "../App.tsx"), "utf8");
 const pendente = readFileSync(resolve(here, "../pages/AdministrativoPendentePage.tsx"), "utf8");
+const categorias = readFileSync(resolve(here, "../pages/CategoriasFinanceirasPage.tsx"), "utf8");
 const pessoas = readFileSync(resolve(here, "../pages/FinancialPeoplePage.tsx"), "utf8");
 const acesso = readFileSync(resolve(here, "../pages/AcessoContaPage.tsx"), "utf8");
 const benfeitorias = readFileSync(resolve(here, "../pages/BenfeitoriasListPage.tsx"), "utf8");
@@ -20,7 +21,7 @@ describe("menu Administrativo", () => {
   it("segue a ordem pedida e tira a Visão Geral", () => {
     expect(filhos("Administrativo").map(item => item.label)).toEqual([
       "Fazendas",
-      "Pessoas e Empresas",
+      "Parceiros",
       "Categorias Financeiras",
       "Centro de Custos",
       "Usuários e Acessos",
@@ -63,7 +64,8 @@ describe("menu Administrativo", () => {
     expect(app).toContain('path="/financeiro/pessoas"');
     expect(app).toContain("component={FinancialPeoplePage}");
     expect(pessoas).toContain("trpc.pessoas.create");
-    expect(pessoas).toContain("trpc.pessoas.list");
+    expect(pessoas).toContain("trpc.pessoas.update");
+    expect(pessoas).toContain("Novo Parceiro");
     expect(app).toContain('path="/conta/acessos"');
     expect(app).toContain("component={AcessoContaPage}");
     expect(acesso).toContain("trpc.acesso.listarUsuarios");
@@ -74,11 +76,26 @@ describe("menu Administrativo", () => {
     expect(benfeitorias).toContain("trpc.benfeitorias.list");
   });
 
-  it("categorias e centros avisam que a tela ainda não grava", () => {
+  it("categorias divide receitas e despesas e centros avisam que a tela ainda não grava", () => {
     expect(app).toContain('path="/administrativo/categorias-financeiras"');
-    expect(app).toContain("component={CategoriasFinanceirasPendentePage}");
+    expect(app).toContain("component={CategoriasFinanceirasPage}");
     expect(app).toContain('path="/administrativo/centros-de-custos"');
     expect(app).toContain("component={CentrosCustoPendentePage}");
+    expect(categorias).toContain("Categorias Financeiras");
+    expect(categorias).toContain("Categorias de Receitas");
+    expect(categorias).toContain("Categorias de Despesas");
+    expect(categorias).toContain("arrow_drop_down");
+    expect(categorias).toContain("arrow_right");
+    expect(categorias).toContain("Adicionar subcategoria em");
+    expect(categorias).toContain("EditActionIcon");
+    expect(categorias).toContain("DeleteActionIcon");
+    expect(categorias).toContain("placeholder=\"Subcategoria\"");
+    expect(categorias).not.toContain("Nome do filho");
+    expect(categorias).not.toContain("Adicionar filho");
+    expect(categorias.match(/Nome da categoria/g)).toHaveLength(1);
+    expect(categorias).toContain("trpc.financeiroV2.categoriasList");
+    expect(categorias).toContain("trpc.financeiroV2.categoriasCreate");
+    expect(categorias).not.toContain("Nada é gravado nesta página.");
     expect(pendente).not.toContain("trpc.");
     expect(pendente).toContain("Nada é gravado nesta página.");
     expect(routerFinanceiro).toContain("categoriasCreate:");

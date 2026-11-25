@@ -1,6 +1,7 @@
 /**
  * Pessoas da conta, compartilhadas entre as fazendas do mesmo titular.
  * O arquivo local não responde. Inativar não apaga compra, venda nem título.
+ * Excluir só apaga o cadastro quando a conferência não acha vínculo.
  */
 import { TRPCError } from "@trpc/server";
 import { and, eq, sql } from "drizzle-orm";
@@ -22,6 +23,8 @@ export const MSG_PESSOA_SEM_MYSQL =
   "O cadastro de pessoas precisa do banco. Nada foi gravado no arquivo local.";
 export const MSG_PESSOA_SEM_PERMISSAO = "Sem permissão para esta operação de pessoas.";
 export const MSG_PESSOA_NAO_ENCONTRADA = "Pessoa não encontrada.";
+export const MSG_PESSOA_VINCULO_OPACO =
+  "Não foi possível conferir os vínculos deste parceiro. Nada foi apagado.";
 
 export type SessaoPessoa = {
   executorId: number;
@@ -43,7 +46,14 @@ export type PessoaEntrada = {
   nomeContato?: string | null;
   cidade?: string | null;
   uf?: string | null;
+  inscricaoEstadual?: string | null;
+  cep?: string | null;
 };
+
+const MSG_PESSOA_IE_INDISPONIVEL =
+  "A inscrição estadual ainda não está disponível neste banco. Nada foi alterado.";
+const MSG_PESSOA_CEP_INDISPONIVEL =
+  "O CEP ainda não está disponível neste banco. Nada foi alterado.";
 
 type Banco = typeof dbPadrao;
 type Tx = Parameters<Parameters<Banco["transaction"]>[0]>[0];
@@ -57,10 +67,12 @@ function semMysql(): never {
   throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_PESSOA_SEM_MYSQL });
 }
 
-function textoErro(erro: unknown) {
-  return erro instanceof Error
-    ? `${erro.message} ${String((erro as { code?: string }).code ?? "")}`
-    : String(erro);
+function textoErro(erro: unknown): string {
+  if (!erro || typeof erro !== "object") return String(erro);
+  const mensagem = erro instanceof Error ? erro.message : String(erro);
+  const codigo = String((erro as { code?: string }).code ?? "");
+  const causa = "cause" in erro ? textoErro((erro as { cause?: unknown }).cause) : "";
+  return `${mensagem} ${codigo} ${causa}`;
 }
 
 async function correr<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
@@ -120,6 +132,82 @@ function limpo(valor: string | null | undefined) {
   return texto ? texto : null;
 }
 
+async function colunaPessoaExiste(tx: Tx, coluna: string) {
+  const resultado = await tx.execute(
+    sql`SELECT COUNT(*) AS n FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'pessoas' AND COLUMN_NAME = ${coluna}`,
+  );
+  const pacote = resultado as unknown as [{ n?: number }[], unknown];
+  const linhas = Array.isArray(pacote?.[0]) ? pacote[0] : [];
+  return Number(linhas[0]?.n ?? 0) > 0;
+}
+
+function separarComplemento(entrada: PessoaEntrada) {
+  const ieInformada = entrada.inscricaoEstadual !== undefined;
+  const cepInformado = entrada.cep !== undefined;
+  const inscricaoEstadual = limpo(entrada.inscricaoEstadual);
+  const cep = limpo(entrada.cep);
+  if (inscricaoEstadual && inscricaoEstadual.length > 50) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: "A inscrição estadual pode ter no máximo 50 caracteres." });
+  }
+  if (cep && cep.length > 10) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: "O CEP pode ter no máximo 10 caracteres." });
+  }
+  return { ieInformada, cepInformado, inscricaoEstadual, cep };
+}
+
+async function exigirComplemento(tx: Tx, complemento: ReturnType<typeof separarComplemento>) {
+  if (complemento.ieInformada && complemento.inscricaoEstadual && !(await colunaPessoaExiste(tx, "inscricao_estadual"))) {
+    throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_PESSOA_IE_INDISPONIVEL });
+  }
+  if (complemento.cepInformado && complemento.cep && !(await colunaPessoaExiste(tx, "cep"))) {
+    throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_PESSOA_CEP_INDISPONIVEL });
+  }
+}
+
+async function gravarComplemento(
+  tx: Tx,
+  titular: number,
+  id: number,
+  complemento: ReturnType<typeof separarComplemento>,
+) {
+  if (complemento.ieInformada && await colunaPessoaExiste(tx, "inscricao_estadual")) {
+    await tx.execute(sql`
+      UPDATE pessoas SET inscricao_estadual = ${complemento.inscricaoEstadual}
+      WHERE id = ${id} AND user_id = ${titular}
+    `);
+  }
+  if (complemento.cepInformado && await colunaPessoaExiste(tx, "cep")) {
+    await tx.execute(sql`
+      UPDATE pessoas SET cep = ${complemento.cep}
+      WHERE id = ${id} AND user_id = ${titular}
+    `);
+  }
+}
+
+async function complementoDaConta(tx: Tx, titular: number) {
+  const temIe = await colunaPessoaExiste(tx, "inscricao_estadual");
+  const temCep = await colunaPessoaExiste(tx, "cep");
+  if (!temIe && !temCep) return null;
+  const consulta = temIe && temCep
+    ? sql`SELECT id, inscricao_estadual AS inscricaoEstadual, cep FROM pessoas WHERE user_id = ${titular}`
+    : temIe
+      ? sql`SELECT id, inscricao_estadual AS inscricaoEstadual, NULL AS cep FROM pessoas WHERE user_id = ${titular}`
+      : sql`SELECT id, NULL AS inscricaoEstadual, cep FROM pessoas WHERE user_id = ${titular}`;
+  const resultado = await tx.execute(consulta);
+  const pacote = resultado as unknown as [Array<{ id?: number; inscricaoEstadual?: unknown; cep?: unknown }>, unknown];
+  const linhas = Array.isArray(pacote?.[0]) ? pacote[0] : [];
+  const mapa = new Map<number, { inscricaoEstadual: string | null; cep: string | null }>();
+  for (const linha of linhas) {
+    const inscricao = linha.inscricaoEstadual == null ? "" : String(linha.inscricaoEstadual).trim();
+    const codigo = linha.cep == null ? "" : String(linha.cep).trim();
+    mapa.set(Number(linha.id), {
+      inscricaoEstadual: inscricao || null,
+      cep: codigo || null,
+    });
+  }
+  return mapa;
+}
+
 async function clientes(tx: Tx, titular: number) {
   return tx
     .select({
@@ -146,6 +234,37 @@ async function pessoaDaConta(tx: Tx, titular: number, id: number) {
   return row;
 }
 
+async function contar(tx: Tx, consulta: ReturnType<typeof sql>) {
+  try {
+    const resultado = await tx.execute(consulta);
+    const pacote = resultado as unknown as [{ n?: number }[], unknown];
+    const linhas = Array.isArray(pacote?.[0]) ? pacote[0] : [];
+    return Number(linhas[0]?.n ?? 0);
+  } catch (erro) {
+    if (/doesn't exist|does not exist|ER_NO_SUCH_TABLE|1146/i.test(textoErro(erro))) return null;
+    throw erro;
+  }
+}
+
+const CONSULTAS_VINCULO = [
+  (id: number) => sql`SELECT COUNT(*) AS n FROM compras WHERE fornecedor_id = ${id}`,
+  (id: number) => sql`SELECT COUNT(*) AS n FROM vendas WHERE comprador_id = ${id}`,
+  (id: number) => sql`SELECT COUNT(*) AS n FROM estoque_operacoes WHERE fornecedor_id = ${id} OR frete_credor_id = ${id}`,
+  (id: number) => sql`SELECT COUNT(*) AS n FROM financeiro_titulos WHERE pessoa_id = ${id}`,
+  (id: number) => sql`SELECT COUNT(*) AS n FROM financeiro_movimentos WHERE contraparte_pessoa_id = ${id}`,
+  (id: number) => sql`SELECT COUNT(*) AS n FROM manutencoes WHERE prestadorPessoaId = ${id}`,
+];
+
+async function vinculos(tx: Tx, id: number) {
+  let total = 0;
+  for (const consulta of CONSULTAS_VINCULO) {
+    const qtd = await contar(tx, consulta(id));
+    if (qtd == null) return null;
+    total += qtd;
+  }
+  return total;
+}
+
 export const pessoasOperacao = {
   async listar(sessao: SessaoPessoa, filtro?: { tipo?: PessoaTipo; incluirInativos?: boolean }) {
     return correr(async (tx) => {
@@ -153,7 +272,14 @@ export const pessoasOperacao = {
       const condicoes = [eq(pessoas.userId, titular)];
       if (deveRestringirPessoasListAosAtivos(filtro?.incluirInativos)) condicoes.push(eq(pessoas.ativo, true));
       if (filtro?.tipo) condicoes.push(eq(pessoas.tipo, filtro.tipo));
-      return tx.select().from(pessoas).where(and(...condicoes)).orderBy(pessoas.nome);
+      const linhas = await tx.select().from(pessoas).where(and(...condicoes)).orderBy(pessoas.nome);
+      const complemento = await complementoDaConta(tx, titular);
+      if (!complemento) return linhas;
+      return linhas.map((linha) => ({
+        ...linha,
+        inscricaoEstadual: complemento.get(linha.id)?.inscricaoEstadual ?? null,
+        cep: complemento.get(linha.id)?.cep ?? null,
+      }));
     });
   },
 
@@ -163,6 +289,8 @@ export const pessoasOperacao = {
       const nome = entrada.nome?.trim() ?? "";
       if (!nome) throw new TRPCError({ code: "BAD_REQUEST", message: "Informe o nome." });
       if (!entrada.tipo) throw new TRPCError({ code: "BAD_REQUEST", message: "Informe o tipo." });
+      const complemento = separarComplemento(entrada);
+      await exigirComplemento(tx, complemento);
       const documento = limpo(entrada.documento);
       recusarDocumento(avaliarDocumentoClienteCreate({
         userId: titular,
@@ -187,6 +315,7 @@ export const pessoasOperacao = {
         ativo: true,
       });
       const id = Number((result as unknown as [{ insertId?: number }])[0]?.insertId ?? 0);
+      if (id > 0) await gravarComplemento(tx, titular, id, complemento);
       return { success: true as const, id };
     });
   },
@@ -195,6 +324,8 @@ export const pessoasOperacao = {
     return correr(async (tx) => {
       const titular = await conta(tx, sessao, "pessoas.editar");
       const atual = await pessoaDaConta(tx, titular, id);
+      const complemento = separarComplemento(entrada);
+      await exigirComplemento(tx, complemento);
       recusarDocumento(avaliarDocumentoClienteUpdate({
         userId: titular,
         id,
@@ -223,6 +354,7 @@ export const pessoasOperacao = {
       if (Object.keys(patch).length > 0) {
         await tx.update(pessoas).set(patch).where(and(eq(pessoas.id, id), eq(pessoas.userId, titular)));
       }
+      await gravarComplemento(tx, titular, id, complemento);
       return { success: true as const };
     });
   },
@@ -244,6 +376,35 @@ export const pessoasOperacao = {
         throw new TRPCError({ code: "NOT_FOUND", message: MSG_PESSOA_REATIVAR_NAO_ENCONTRADA });
       }
       await tx.update(pessoas).set({ ativo: true }).where(and(eq(pessoas.id, id), eq(pessoas.userId, titular)));
+      return { success: true as const };
+    });
+  },
+
+  async conferirExclusao(sessao: SessaoPessoa, id: number) {
+    return correr(async (tx) => {
+      const titular = await conta(tx, sessao, "pessoas.inativar");
+      const row = await pessoaDaConta(tx, titular, id);
+      const total = await vinculos(tx, id);
+      if (total == null) throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_PESSOA_VINCULO_OPACO });
+      return { nome: row.nome, canDelete: total === 0 };
+    });
+  },
+
+  async excluir(sessao: SessaoPessoa, id: number) {
+    return correr(async (tx) => {
+      const titular = await conta(tx, sessao, "pessoas.inativar");
+      const row = await pessoaDaConta(tx, titular, id);
+      const total = await vinculos(tx, id);
+      if (total == null) throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_PESSOA_VINCULO_OPACO });
+      if (total > 0) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: `Não é possível excluir o parceiro "${row.nome}".`,
+        });
+      }
+      await tx.delete(pessoas).where(and(eq(pessoas.id, id), eq(pessoas.userId, titular)));
+      const [ainda] = await tx.select({ id: pessoas.id }).from(pessoas).where(eq(pessoas.id, id)).limit(1);
+      if (ainda) throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_PESSOA_VINCULO_OPACO });
       return { success: true as const };
     });
   },

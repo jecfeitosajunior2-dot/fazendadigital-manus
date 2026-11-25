@@ -8,10 +8,12 @@ import {
   ACOES_MENU_FAZENDA,
   COLUNAS_LISTA_FAZENDAS,
   areaTotalHa,
-  caminhoSubdivisoesDaFazenda,
+  fazendaCombinaBusca,
+  ordenarFazendasPorNome,
   municipioUf,
   pastagemHaCadastrada,
-  quantidadeSubdivisoes,
+  corSituacaoFazenda,
+  rotuloSituacaoFazenda,
 } from "@/lib/fazendasListagem";
 import { FazendaSubdivisoesPanel } from "@/components/FazendaSubdivisoesPanel";
 import {
@@ -194,29 +196,6 @@ function FarmRowActions({
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
-  );
-}
-
-function BotaoQuantidadeSubdivisoes({
-  fazenda,
-  quantidade,
-  estilo,
-}: {
-  fazenda: { id: number; nome: string };
-  quantidade: number;
-  estilo: { fontFamily: string; fontSize: string; fontWeight: number };
-}) {
-  const [, setLocation] = useLocation();
-  return (
-    <button
-      type="button"
-      className="inline-flex min-h-10 min-w-10 items-center justify-center rounded px-2 text-gray-700 tabular-nums hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#4ECDC4]"
-      style={estilo}
-      aria-label={`Subdivisões de ${fazenda.nome}`}
-      onClick={() => setLocation(caminhoSubdivisoesDaFazenda(fazenda.id))}
-    >
-      {quantidadeSubdivisoes(quantidade)}
-    </button>
   );
 }
 
@@ -411,6 +390,8 @@ export function FarmsListPage() {
   const [, setLocation] = useLocation();
   const utils = trpc.useUtils();
   const [aviso, setAviso] = useState<AvisoListaFazenda | null>(null);
+  const [busca, setBusca] = useState("");
+  const [nomeCrescente, setNomeCrescente] = useState(true);
   const situacaoMut = trpc.fazendas.definirSituacao.useMutation({
     onSuccess: (_resultado, pedido) => {
       setAviso(null);
@@ -419,13 +400,24 @@ export function FarmsListPage() {
     },
     onError: (erro) => toast.error(erro.message),
   });
+  const excluirMut = trpc.fazendas.delete.useMutation({
+    onSuccess: () => {
+      setAviso(null);
+      utils.fazendas.list.invalidate();
+      toast.success("Fazenda excluída.");
+    },
+    onError: (erro) => toast.error(erro.message),
+  });
   const { data: fazendaList = [], isLoading } = trpc.fazendas.list.useQuery();
-  const { data: allPastos = [] } = trpc.pastos.list.useQuery();
-  const pastosPorFazenda = useMemo(() => {
-    const map: Record<number, number> = {};
-    allPastos.forEach(p => { map[p.fazendaId] = (map[p.fazendaId] || 0) + 1; });
-    return map;
-  }, [allPastos]);
+  const fazendasVisiveis = useMemo(
+    () => ordenarFazendasPorNome(
+      fazendaList.filter((fazenda) => fazendaCombinaBusca(fazenda, busca)),
+      nomeCrescente,
+    ),
+    [fazendaList, busca, nomeCrescente],
+  );
+  const listaVazia = !isLoading && fazendaList.length === 0;
+  const buscaSemResultado = !isLoading && fazendaList.length > 0 && fazendasVisiveis.length === 0;
 
   const fonte = "'Inter', sans-serif";
   const titulo = { fontFamily: fonte, fontSize: "24px", fontWeight: 600, color: "#172033" };
@@ -442,13 +434,23 @@ export function FarmsListPage() {
   const abrirExclusao = async (fazenda: { id: number; nome: string }) => {
     try {
       const check = await utils.fazendas.deleteCheck.fetch({ id: fazenda.id });
-      setAviso({ tipo: "excluir", nome: check.nome || fazenda.nome, blockers: check.blockers, conferencia: "ok" });
+      setAviso({
+        tipo: "excluir",
+        id: fazenda.id,
+        nome: check.nome || fazenda.nome,
+        podeExcluir: check.canDelete,
+        conferencia: "ok",
+      });
     } catch {
-      setAviso({ tipo: "excluir", nome: fazenda.nome, blockers: [], conferencia: "falhou" });
+      setAviso({ tipo: "excluir", id: fazenda.id, nome: fazenda.nome, podeExcluir: false, conferencia: "falhou" });
     }
   };
   const confirmarAviso = () => {
-    if (!aviso || aviso.tipo === "excluir") return;
+    if (!aviso) return;
+    if (aviso.tipo === "excluir") {
+      if (aviso.podeExcluir) excluirMut.mutate({ id: aviso.id });
+      return;
+    }
     situacaoMut.mutate({
       id: aviso.id,
       situacao: aviso.tipo === "inativar" ? "inativo" : "ativo",
@@ -458,13 +460,24 @@ export function FarmsListPage() {
     <AppLayout>
       <FazendaListaAvisos
         aviso={aviso}
-        enviando={situacaoMut.isPending}
-        onFechar={() => { if (!situacaoMut.isPending) setAviso(null); }}
+        enviando={situacaoMut.isPending || excluirMut.isPending}
+        onFechar={() => { if (!situacaoMut.isPending && !excluirMut.isPending) setAviso(null); }}
         onConfirmar={confirmarAviso}
       />
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <h1 style={titulo}>Fazendas</h1>
         <div className="flex items-center gap-3 flex-wrap">
+          <label className="relative block">
+            <span className="material-icons pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[18px] text-gray-400">search</span>
+            <input
+              value={busca}
+              onChange={(evento) => setBusca(evento.target.value)}
+              placeholder="Buscar fazenda"
+              aria-label="Buscar fazenda"
+              className="min-h-[44px] w-56 rounded border border-gray-200 bg-white pl-10 pr-3 text-gray-700 outline-none focus:border-[#4ECDC4]"
+              style={info}
+            />
+          </label>
           <button onClick={() => setLocation("/fazendas/cadastro")} className="flex items-center justify-center gap-1 px-3 py-1.5 min-h-[44px] rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4", ...botao }}>
             <span className="material-icons text-[14px]">add</span>
             Nova Fazenda
@@ -475,24 +488,23 @@ export function FarmsListPage() {
       <div className="lg:hidden space-y-2.5">
         {isLoading ? (
           <div className="bg-white rounded-lg border border-gray-100 p-8 text-center text-gray-400" style={info}>Carregando...</div>
-        ) : fazendaList.length === 0 ? (
+        ) : listaVazia ? (
           <div className="bg-white rounded-lg border border-gray-100 p-8 text-center text-gray-400" style={info}>Nenhuma fazenda cadastrada.</div>
-        ) : fazendaList.map((f: any) => (
+        ) : buscaSemResultado ? (
+          <div className="bg-white rounded-lg border border-gray-100 p-8 text-center text-gray-400" style={info}>Nenhuma fazenda encontrada.</div>
+        ) : fazendasVisiveis.map((f: any) => (
           <div key={f.id} className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0 flex-1" style={info}>
-                <p className="text-gray-700">{f.nome}{f.situacao === "inativo" ? <span className="ml-2 text-gray-400">Inativa</span> : null}</p>
+                <p className="text-gray-700">{f.nome}</p>
                 <p className="text-gray-500 mt-0.5">{municipioUf(f.cidade, f.estado)}</p>
               </div>
               <FarmRowActions fazenda={f} onSituacao={() => alternarSituacao(f)} onExcluir={() => { void abrirExclusao(f); }} />
             </div>
             <div className="mt-2 pt-2 border-t border-gray-100 space-y-1" style={info}>
               <p><span className="text-gray-400">Área Total (ha): </span>{areaTotalHa(f.area)}</p>
-              <p><span className="text-gray-400">Pastagem (ha): </span>{pastagemHaCadastrada()}</p>
-              <p className="flex items-center gap-1">
-                <span className="text-gray-400">Subdivisões: </span>
-                <BotaoQuantidadeSubdivisoes fazenda={f} quantidade={pastosPorFazenda[f.id] ?? 0} estilo={info} />
-              </p>
+              <p><span className="text-gray-400">Pastagem (ha): </span>{pastagemHaCadastrada(f.areaPastagem)}</p>
+              <p><span className="text-gray-400">Situação: </span><span style={{ color: corSituacaoFazenda(f.situacao) }}>{rotuloSituacaoFazenda(f.situacao)}</span></p>
             </div>
           </div>
         ))}
@@ -503,23 +515,36 @@ export function FarmsListPage() {
         <table className="w-full min-w-[760px]">
           <colgroup>
             <col style={{ width: "26%" }} />
-            <col style={{ width: "18%" }} />
+            <col style={{ width: "20%" }} />
+            <col style={{ width: "16%" }} />
             <col style={{ width: "14%" }} />
-            <col style={{ width: "14%" }} />
-            <col style={{ width: "14%" }} />
-            <col style={{ width: "14%" }} />
+            <col style={{ width: "12%" }} />
+            <col style={{ width: "12%" }} />
           </colgroup>
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
               {COLUNAS_LISTA_FAZENDAS.map((coluna) => (
                 <th
                   key={coluna}
+                  aria-sort={coluna === "Nome" ? (nomeCrescente ? "ascending" : "descending") : undefined}
                   className={`px-3 py-2 text-gray-500 uppercase whitespace-nowrap ${
-                    coluna === "Nome" || coluna === "Município/UF" ? "text-left" : coluna === "Ações" || coluna === "Subdivisões" ? "text-center" : "text-right"
+                    coluna === "Nome" || coluna === "Município/UF" ? "text-left" : coluna === "Ações" || coluna === "Situação" ? "text-center" : "text-right"
                   }`}
                   style={cabecalho}
                 >
-                  {coluna.endsWith(" (ha)") ? (
+                  {coluna === "Nome" ? (
+                    <button
+                      type="button"
+                      onClick={() => setNomeCrescente((atual) => !atual)}
+                      className="inline-flex items-center gap-0.5 uppercase hover:text-gray-700"
+                      aria-label={nomeCrescente ? "Ordenar nome de Z até A" : "Ordenar nome de A até Z"}
+                    >
+                      Nome
+                      <span className="material-icons text-[18px] leading-none text-gray-400" aria-hidden>
+                        {nomeCrescente ? "arrow_drop_up" : "arrow_drop_down"}
+                      </span>
+                    </button>
+                  ) : coluna.endsWith(" (ha)") ? (
                     <>
                       {coluna.slice(0, -5)}
                       <span className="normal-case"> (ha)</span>
@@ -533,16 +558,15 @@ export function FarmsListPage() {
           </thead>
           <tbody>
             {isLoading && <tr><td colSpan={6} className="px-3 py-4 text-center text-gray-400" style={info}>Carregando...</td></tr>}
-            {!isLoading && fazendaList.length === 0 && <tr><td colSpan={6} className="px-3 py-6 text-center text-gray-400" style={info}>Nenhuma fazenda cadastrada.</td></tr>}
-            {fazendaList.map((f: any) => (
+            {listaVazia && <tr><td colSpan={6} className="px-3 py-6 text-center text-gray-400" style={info}>Nenhuma fazenda cadastrada.</td></tr>}
+            {buscaSemResultado && <tr><td colSpan={6} className="px-3 py-6 text-center text-gray-400" style={info}>Nenhuma fazenda encontrada.</td></tr>}
+            {fazendasVisiveis.map((f: any) => (
               <tr key={f.id} className="border-t border-gray-50 hover:bg-gray-50/50">
-                <td className="px-3 py-2 text-gray-700" style={info}>{f.nome}{f.situacao === "inativo" ? <span className="ml-2 text-gray-400">Inativa</span> : null}</td>
+                <td className="px-3 py-2 text-gray-700" style={info}>{f.nome}</td>
                 <td className="px-3 py-2 text-gray-700" style={info}>{municipioUf(f.cidade, f.estado)}</td>
                 <td className="px-3 py-2 text-right text-gray-700 tabular-nums" style={info}>{areaTotalHa(f.area)}</td>
-                <td className="px-3 py-2 text-right text-gray-700 tabular-nums" style={info}>{pastagemHaCadastrada()}</td>
-                <td className="px-3 py-2 text-center">
-                  <BotaoQuantidadeSubdivisoes fazenda={f} quantidade={pastosPorFazenda[f.id] ?? 0} estilo={info} />
-                </td>
+                <td className="px-3 py-2 text-right text-gray-700 tabular-nums" style={info}>{pastagemHaCadastrada(f.areaPastagem)}</td>
+                <td className="px-3 py-2 text-center" style={{ ...info, color: corSituacaoFazenda(f.situacao) }}>{rotuloSituacaoFazenda(f.situacao)}</td>
                 <td className="px-3 py-2">
                   <div className="flex items-center justify-center">
                     <FarmRowActions fazenda={f} onSituacao={() => alternarSituacao(f)} onExcluir={() => { void abrirExclusao(f); }} />

@@ -9,12 +9,16 @@ import {
   MSG_INATIVAR_FAZENDA_INDISPONIVEL,
   areaTotalHa,
   caminhoSubdivisoesDaFazenda,
+  corSituacaoFazenda,
+  fazendaCombinaBusca,
   fazendaDaLista,
   fazendaIdDaBusca,
   modoExclusaoBloqueada,
   municipioUf,
+  ordenarFazendasPorNome,
   pastagemHaCadastrada,
   quantidadeSubdivisoes,
+  rotuloSituacaoFazenda,
 } from "./fazendasListagem";
 
 const aqui = dirname(fileURLToPath(import.meta.url));
@@ -31,9 +35,55 @@ describe("colunas da lista de fazendas", () => {
       "Município/UF",
       "Área Total (ha)",
       "Pastagem (ha)",
-      "Subdivisões",
+      "Situação",
       "Ações",
     ]);
+  });
+
+  it("mostra Ativa ou Inativa sem tratar o nome como situação", () => {
+    expect(rotuloSituacaoFazenda("ativo")).toBe("Ativa");
+    expect(rotuloSituacaoFazenda("inativo")).toBe("Inativa");
+    expect(rotuloSituacaoFazenda(null)).toBe("Ativa");
+    expect(rotuloSituacaoFazenda(undefined)).toBe("Ativa");
+    expect(corSituacaoFazenda("ativo")).toBe("#16A34A");
+    expect(corSituacaoFazenda(null)).toBe("#16A34A");
+    expect(corSituacaoFazenda("inativo")).toBe("#D97706");
+    const pagina = lista.slice(lista.indexOf("export function FarmsListPage"));
+    expect(pagina).toContain("rotuloSituacaoFazenda");
+    expect(pagina).toContain("corSituacaoFazenda");
+    expect(pagina).not.toContain('ml-2 text-gray-400">Inativa');
+  });
+
+  it("ordena o nome de A até Z e inverte no clique da seta", () => {
+    const fazendas = [
+      { nome: "Sítio Revisão Cadastro" },
+      { nome: "Fazenda da Prévia" },
+      { nome: "Água Boa" },
+    ];
+    expect(ordenarFazendasPorNome(fazendas).map((fazenda) => fazenda.nome)).toEqual([
+      "Água Boa",
+      "Fazenda da Prévia",
+      "Sítio Revisão Cadastro",
+    ]);
+    expect(ordenarFazendasPorNome(fazendas, false).map((fazenda) => fazenda.nome)).toEqual([
+      "Sítio Revisão Cadastro",
+      "Fazenda da Prévia",
+      "Água Boa",
+    ]);
+    const pagina = lista.slice(lista.indexOf("export function FarmsListPage"));
+    expect(pagina).toContain("ordenarFazendasPorNome");
+    expect(pagina).toContain("arrow_drop_up");
+    expect(pagina).toContain("arrow_drop_down");
+    expect(pagina).toContain('coluna === "Nome"');
+  });
+
+  it("busca pelo nome e pelo município desta conta", () => {
+    const balsas = { nome: "Fazenda da Prévia", cidade: "Balsas", estado: "MA" };
+    const sitio = { nome: "Sítio Revisão Cadastro", cidade: "Balsas", estado: "MA" };
+    expect(fazendaCombinaBusca(balsas, "")).toBe(true);
+    expect(fazendaCombinaBusca(balsas, "prévia")).toBe(true);
+    expect(fazendaCombinaBusca(balsas, "Balsas/MA")).toBe(true);
+    expect(fazendaCombinaBusca(sitio, "prévia")).toBe(false);
   });
 
   it("junta município e UF", () => {
@@ -50,6 +100,8 @@ describe("colunas da lista de fazendas", () => {
     expect(areaTotalHa("")).toBe("—");
     expect(areaTotalHa(null)).toBe("—");
     expect(pastagemHaCadastrada()).toBe("—");
+    expect(pastagemHaCadastrada("12.50")).toBe("12,50");
+    expect(pastagemHaCadastrada(null)).toBe("—");
   });
 
   it("ordena o menu em Editar, Inativar e Excluir, sem operação falsa", () => {
@@ -82,7 +134,9 @@ describe("colunas da lista de fazendas", () => {
     const conta = [{ id: 4, nome: "Da conta" }];
     expect(fazendaDaLista(conta, 4)?.nome).toBe("Da conta");
     expect(fazendaDaLista(conta, 9)).toBeNull();
-    expect(lista).toContain("caminhoSubdivisoesDaFazenda");
+    const cadastro = lista.slice(lista.indexOf("export function FarmsListPage"));
+    expect(cadastro).not.toContain("caminhoSubdivisoesDaFazenda");
+    expect(cadastro).not.toContain("BotaoQuantidadeSubdivisoes");
     const pagina = readFileSync(resolve(aqui, "../pages/SubdivisoesPage.tsx"), "utf8");
     expect(pagina).toContain("fazendaDaLista");
     expect(pagina).not.toContain("fazendas.get");
@@ -92,21 +146,28 @@ describe("colunas da lista de fazendas", () => {
     const operacao = readFileSync(resolve(aqui, "../../../server/fazendasOperacao.ts"), "utf8");
     expect(operacao).toContain("async definirSituacao");
     expect(operacao).toContain("SET situacao");
-    expect(operacao).toContain("MSG_FAZENDA_EXCLUSAO_BLOQUEADA");
+    expect(operacao).toContain("tx.delete(fazendas)");
     const excluir = operacao.slice(operacao.indexOf("async excluir"), operacao.indexOf("};", operacao.indexOf("async excluir")));
     expect(excluir).toContain("throw new TRPCError");
-    expect(excluir).not.toContain(".delete(");
+    expect(excluir).toContain("tx.delete(fazendas)");
     const lista = readFileSync(resolve(aqui, "../pages/ModulePages.tsx"), "utf8");
     const pagina = lista.slice(lista.indexOf("export function FarmsListPage"), lista.indexOf("export function SubdivisionsPage"));
     expect(pagina).toContain("definirSituacao");
-    expect(pagina).not.toContain("handleDeleteFazenda");
-    expect(pagina).not.toContain("fazendas.delete.useMutation");
+    expect(pagina).toContain("fazendas.delete.useMutation");
     const avisos = readFileSync(resolve(aqui, "../components/FazendaListaAvisos.tsx"), "utf8");
     expect(avisos).toContain("Inativar fazenda");
     expect(avisos).toContain("Reativar fazenda");
+    expect(avisos).toContain("volta a ficar ativa.");
+    expect(avisos).not.toContain("operações autorizadas");
+    expect(avisos).not.toContain("deixará de estar disponível para novas operações.");
+    expect(avisos).toContain("ficará inativa.");
+    expect(avisos).toContain("Os cadastros e históricos vinculados serão preservados.");
     expect(avisos).toContain("Não é possível excluir a fazenda");
+    expect(avisos).toContain("não pode ser excluída.");
+    expect(avisos).toContain("</Nome> será excluída.</p>");
+    expect(avisos).not.toContain("Esta ação não tem volta.");
     expect(avisos).toContain("Entendi");
-    expect(avisos).toContain("subdivisões vinculadas");
+    expect(avisos).not.toContain("subdivisões vinculadas");
     expect(avisos).not.toContain("#DC2626");
   });
 

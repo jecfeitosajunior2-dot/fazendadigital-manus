@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import {
   financeiroApropriacoes,
   financeiroCategorias,
@@ -12,6 +12,7 @@ import {
   financeiroTitulos,
   financeiroTransferencias,
   fazendas,
+  movimentacoes,
   pessoas,
   users,
   usuarioFazendas,
@@ -95,6 +96,34 @@ import {
 import { montarRelatorioFinanceiroV2 } from "../shared/financeiroRelatoriosV2";
 import { isMysqlDuplicateKey } from "../shared/compraInsumos";
 import { db } from "./db";
+
+const MSG_SUBCATEGORIA_VINCULO_OPACO = "Não foi possível conferir os vínculos desta subcategoria. Nada foi apagado.";
+
+function falharSubcategoria(
+  message: string,
+  code: "BAD_REQUEST" | "NOT_FOUND" | "PRECONDITION_FAILED" = "BAD_REQUEST",
+): never {
+  throw new TRPCError({ code, message });
+}
+
+function textoErroCategoria(error: unknown): string {
+  const partes: string[] = [];
+  const vistos = new Set<unknown>();
+  let atual: unknown = error;
+  while (atual && typeof atual === "object" && !vistos.has(atual)) {
+    vistos.add(atual);
+    const item = atual as { message?: string; code?: string; cause?: unknown };
+    if (item.message) partes.push(item.message);
+    if (item.code) partes.push(String(item.code));
+    atual = item.cause;
+  }
+  return partes.join(" ");
+}
+
+function tabelaAusente(error: unknown) {
+  const texto = textoErroCategoria(error);
+  return texto.includes("doesn't exist") || texto.includes("ER_NO_SUCH_TABLE") || texto.includes("1146");
+}
 
 function toTrpc(message: string, code: "BAD_REQUEST" | "NOT_FOUND" | "FORBIDDEN" = "BAD_REQUEST"): never {
   throw new TRPCError({ code, message });
@@ -456,6 +485,8 @@ export type FinanceiroNucleoTx = {
   findCategoriaPorChave(userId: number, chave: string): Promise<FinCategoriaRow | null>;
   insertCategoria(row: Omit<FinCategoriaRow, "id">): Promise<number>;
   updateCategoria(userId: number, id: number, patch: Partial<Pick<FinCategoriaRow, "nome" | "tipo" | "categoriaPaiId" | "ativa">>): Promise<void>;
+  contarUsoCategoria(userId: number, categoriaId: number): Promise<number | null>;
+  deleteCategoria(userId: number, id: number): Promise<void>;
   listCategorias(userId: number): Promise<FinCategoriaRow[]>;
   findCentro(userId: number, id: number): Promise<FinCentroRow | null>;
   insertCentro(row: Omit<FinCentroRow, "id">): Promise<number>;
@@ -884,6 +915,20 @@ export async function listarTitulosPorOrigemNoTx(
   origemId: number,
 ) {
   return tx.listTitulosPorOrigem(userId, origemTipo, origemId);
+}
+
+async function subcategoriaDoTitular(tx: FinanceiroNucleoTx, userId: number, id: number) {
+  const cat = await tx.findCategoria(userId, id);
+  if (!cat) falharSubcategoria("Subcategoria não encontrada.", "NOT_FOUND");
+  if (cat.categoriaPaiId == null) falharSubcategoria("Esta ação vale para a subcategoria.", "PRECONDITION_FAILED");
+  return cat;
+}
+
+async function usoDaSubcategoria(tx: FinanceiroNucleoTx, userId: number, id: number) {
+  const uso = await tx.contarUsoCategoria(userId, id);
+  if (uso == null) falharSubcategoria(MSG_SUBCATEGORIA_VINCULO_OPACO, "PRECONDITION_FAILED");
+  const filhos = (await tx.listCategorias(userId)).filter((item) => item.categoriaPaiId === id).length;
+  return uso + filhos;
 }
 
 export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
@@ -1873,6 +1918,43 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
       });
     },
 
+    async renomearSubcategoria(userId: number, id: number, nomeInformado: string, sessao?: SessaoFinanceiro) {
+      const nome = nomeInformado.trim();
+      if (!nome) falharSubcategoria("Informe o nome da subcategoria.");
+      if (nome.length > 120) falharSubcategoria("O nome da subcategoria pode ter no máximo 120 caracteres.");
+      return store.transaction(async tx => {
+        const acesso = await abrirSessaoFinanceiro(tx, userId, sessao);
+        fecharFazendasFinanceiro(acesso, []);
+        const cat = await subcategoriaDoTitular(tx, userId, id);
+        await tx.updateCategoria(userId, cat.id, { nome });
+        return { success: true };
+      });
+    },
+
+    async conferirExclusaoSubcategoria(userId: number, id: number, sessao?: SessaoFinanceiro) {
+      return store.transaction(async tx => {
+        const acesso = await abrirSessaoFinanceiro(tx, userId, sessao);
+        fecharFazendasFinanceiro(acesso, []);
+        const cat = await subcategoriaDoTitular(tx, userId, id);
+        const uso = await usoDaSubcategoria(tx, userId, cat.id);
+        return { nome: cat.nome, canDelete: uso === 0 };
+      });
+    },
+
+    async excluirSubcategoria(userId: number, id: number, sessao?: SessaoFinanceiro) {
+      return store.transaction(async tx => {
+        const acesso = await abrirSessaoFinanceiro(tx, userId, sessao);
+        fecharFazendasFinanceiro(acesso, []);
+        const cat = await subcategoriaDoTitular(tx, userId, id);
+        const uso = await usoDaSubcategoria(tx, userId, cat.id);
+        if (uso > 0) falharSubcategoria(`Não é possível excluir a subcategoria "${cat.nome}".`, "PRECONDITION_FAILED");
+        await tx.deleteCategoria(userId, cat.id);
+        const ainda = await tx.findCategoria(userId, cat.id);
+        if (ainda) falharSubcategoria(MSG_SUBCATEGORIA_VINCULO_OPACO, "PRECONDITION_FAILED");
+        return { success: true };
+      });
+    },
+
     async criarCentroCusto(userId: number, input: { nome: string; fazendaId?: number | null }, sessao?: SessaoFinanceiro) {
       const nome = input.nome.trim();
       if (!nome) toTrpc("Informe o nome do centro de custo.");
@@ -2548,6 +2630,22 @@ export function createFinanceiroNucleoTxFromDrizzle(drizzleTx: FinanceiroDrizzle
         },
         async updateCategoria(userId, id, patch) {
           await drizzleTx.update(financeiroCategorias).set(patch)
+            .where(and(eq(financeiroCategorias.id, id), eq(financeiroCategorias.userId, userId)));
+        },
+        async contarUsoCategoria(userId, categoriaId) {
+          try {
+            const [apropriacao] = await drizzleTx.select({ total: count() }).from(financeiroApropriacoes)
+              .where(and(eq(financeiroApropriacoes.userId, userId), eq(financeiroApropriacoes.categoriaId, categoriaId)));
+            const [movimento] = await drizzleTx.select({ total: count() }).from(movimentacoes)
+              .where(eq(movimentacoes.categoriaId, categoriaId));
+            return Number(apropriacao?.total ?? 0) + Number(movimento?.total ?? 0);
+          } catch (error) {
+            if (tabelaAusente(error)) return null;
+            throw error;
+          }
+        },
+        async deleteCategoria(userId, id) {
+          await drizzleTx.delete(financeiroCategorias)
             .where(and(eq(financeiroCategorias.id, id), eq(financeiroCategorias.userId, userId)));
         },
         async listCategorias(userId) {

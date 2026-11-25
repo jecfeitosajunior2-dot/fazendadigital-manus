@@ -12,7 +12,6 @@ import {
   definirBancoFazendas,
   definirGanchoTravaFazenda,
   fazendasOperacao,
-  MSG_FAZENDA_EXCLUSAO_BLOQUEADA,
   MSG_FAZENDA_HISTORICO,
   MSG_FAZENDA_SEM_MYSQL,
   MSG_FAZENDA_SEM_PERMISSAO,
@@ -227,7 +226,7 @@ describe("fazendas no MySQL descartável", () => {
     expect(linhas[0]?.userId).toBe(1);
   });
 
-  it("não apaga fazenda com pasto, com concessão, nem a que está vazia", async () => {
+  it("não apaga fazenda com pasto nem com concessão, e apaga a vazia", async () => {
     await pool.query("INSERT INTO pastos (id, userId, fazendaId, nome) VALUES (1, 1, 10, 'Mangueira')");
     await expect(fazendasOperacao.excluir(sessao(1), 10)).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
     const [comPasto] = await banco.select({ id: fazendas.id }).from(fazendas).where(eq(fazendas.id, 10));
@@ -245,9 +244,9 @@ describe("fazendas no MySQL descartável", () => {
     const vazia = await fazendasOperacao.criar(sessao(1), { nome: "Vazia" });
     const conferencia = await fazendasOperacao.conferirExclusao(sessao(1), vazia.id);
     expect(conferencia.canDelete).toBe(true);
-    await expect(fazendasOperacao.excluir(sessao(1), vazia.id)).rejects.toThrow(MSG_FAZENDA_EXCLUSAO_BLOQUEADA);
+    await fazendasOperacao.excluir(sessao(1), vazia.id);
     const [ainda] = await banco.select({ id: fazendas.id }).from(fazendas).where(eq(fazendas.id, vazia.id));
-    expect(ainda?.id).toBe(vazia.id);
+    expect(ainda).toBeUndefined();
   });
 
   it("não apaga a fazenda se um pasto entra no meio, nem a fazenda de outra conta", async () => {

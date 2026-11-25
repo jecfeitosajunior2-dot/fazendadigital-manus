@@ -12,6 +12,7 @@ import {
   MSG_PESSOA_NAO_ENCONTRADA,
   MSG_PESSOA_SEM_MYSQL,
   MSG_PESSOA_SEM_PERMISSAO,
+  MSG_PESSOA_VINCULO_OPACO,
   pessoasOperacao,
   type SessaoPessoa,
 } from "./pessoasOperacao";
@@ -60,6 +61,23 @@ CREATE TABLE compras (
   id int NOT NULL, user_id int NOT NULL, fornecedor_id int NULL, data varchar(20) NOT NULL,
   PRIMARY KEY (id)
 ) ENGINE=InnoDB;
+CREATE TABLE vendas (
+  id int NOT NULL, user_id int NOT NULL, comprador_id int NULL, data varchar(20) NOT NULL,
+  PRIMARY KEY (id)
+) ENGINE=InnoDB;
+CREATE TABLE estoque_operacoes (
+  id int NOT NULL, user_id int NOT NULL, fornecedor_id int NULL, frete_credor_id int NULL,
+  PRIMARY KEY (id)
+) ENGINE=InnoDB;
+CREATE TABLE financeiro_titulos (
+  id int NOT NULL, user_id int NOT NULL, pessoa_id int NOT NULL, PRIMARY KEY (id)
+) ENGINE=InnoDB;
+CREATE TABLE financeiro_movimentos (
+  id int NOT NULL, user_id int NOT NULL, contraparte_pessoa_id int NULL, PRIMARY KEY (id)
+) ENGINE=InnoDB;
+CREATE TABLE manutencoes (
+  id int NOT NULL, userId int NOT NULL, prestadorPessoaId int NULL, PRIMARY KEY (id)
+) ENGINE=InnoDB;
 `;
 
 function sessao(executorId: number, sessionVersionDaSessao: number | null = 1): SessaoPessoa {
@@ -72,6 +90,8 @@ describe("contrato das rotas de pessoas", () => {
     const bloco = fonte.slice(fonte.indexOf("const pessoasRouter"), fonte.indexOf("MANEJO ROUTER"));
     expect(bloco).toContain("pessoasOperacao.listar");
     expect(bloco).toContain("pessoasOperacao.inativar");
+    expect(bloco).toContain("pessoasOperacao.conferirExclusao");
+    expect(bloco).toContain("pessoasOperacao.excluir");
     expect(bloco).not.toContain("localFallback");
     expect(bloco).not.toContain("devLocalStore");
   });
@@ -124,6 +144,11 @@ describe("pessoas no MySQL descartável", () => {
   beforeEach(async () => {
     definirBancoPessoas(drizzle(pool, { schema, mode: "default" }));
     await pool.query("DELETE FROM compras");
+    await pool.query("DELETE FROM vendas");
+    await pool.query("DELETE FROM estoque_operacoes");
+    await pool.query("DELETE FROM financeiro_titulos");
+    await pool.query("DELETE FROM financeiro_movimentos");
+    await pool.query("DELETE FROM manutencoes");
     await pool.query("DELETE FROM pessoas");
     await pool.query("DELETE FROM usuario_permissoes");
     await pool.query("DELETE FROM users");
@@ -201,6 +226,39 @@ describe("pessoas no MySQL descartável", () => {
     });
     const [alheia] = await pool.query("SELECT ativo, user_id AS userId FROM pessoas WHERE id = 41") as [Array<{ ativo: number; userId: number }>, unknown];
     expect(alheia[0]).toMatchObject({ ativo: 1, userId: 3 });
+  });
+
+  it("parceiro com compra não é excluído e o sem vínculo sai de verdade", async () => {
+    const bloqueado = await pessoasOperacao.conferirExclusao(sessao(1), 40);
+    expect(bloqueado.canDelete).toBe(false);
+    await expect(pessoasOperacao.excluir(sessao(1), 40)).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+    const [pessoa] = await pool.query("SELECT id FROM pessoas WHERE id = 40") as [Array<{ id: number }>, unknown];
+    const [compra] = await pool.query("SELECT fornecedor_id AS fornecedorId FROM compras WHERE id = 7") as [Array<{ fornecedorId: number }>, unknown];
+    expect(pessoa[0]?.id).toBe(40);
+    expect(compra[0]?.fornecedorId).toBe(40);
+
+    const livre = await pessoasOperacao.criar(sessao(1), { nome: "Sem vinculo", tipo: "funcionario" });
+    const conferencia = await pessoasOperacao.conferirExclusao(sessao(1), livre.id);
+    expect(conferencia.canDelete).toBe(true);
+    await pessoasOperacao.excluir(sessao(1), livre.id);
+    const [sumiu] = await pool.query("SELECT id FROM pessoas WHERE id = ?", [livre.id]) as [Array<{ id: number }>, unknown];
+    expect(sumiu).toHaveLength(0);
+    await expect(pessoasOperacao.excluir(sessao(1), 41)).rejects.toMatchObject({
+      code: "NOT_FOUND", message: MSG_PESSOA_NAO_ENCONTRADA,
+    });
+  });
+
+  it("sem uma tabela de vínculo a exclusão não apaga", async () => {
+    await pool.query("RENAME TABLE vendas TO vendas_fora");
+    try {
+      await expect(pessoasOperacao.conferirExclusao(sessao(1), 40)).rejects.toMatchObject({
+        code: "PRECONDITION_FAILED", message: MSG_PESSOA_VINCULO_OPACO,
+      });
+      const [pessoa] = await pool.query("SELECT id FROM pessoas WHERE id = 40") as [Array<{ id: number }>, unknown];
+      expect(pessoa[0]?.id).toBe(40);
+    } finally {
+      await pool.query("RENAME TABLE vendas_fora TO vendas");
+    }
   });
 
   it("sem o banco a pessoa não cai no arquivo", async () => {

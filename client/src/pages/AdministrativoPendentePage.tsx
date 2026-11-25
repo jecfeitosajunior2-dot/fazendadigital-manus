@@ -17,15 +17,6 @@ export function AdministrativoPendentePage({ titulo, texto }: Pendencia) {
   );
 }
 
-export function CategoriasFinanceirasPendentePage() {
-  return (
-    <AdministrativoPendentePage
-      titulo="Categorias Financeiras"
-      texto="O plano de categorias já fica no serviço do financeiro, separado em receita e despesa, por titular. A tela para cadastrar e revisar essas categorias ainda não foi aberta. Nada é gravado nesta página."
-    />
-  );
-}
-
 export function CentrosCustoPendentePage() {
   return (
     <AdministrativoPendentePage

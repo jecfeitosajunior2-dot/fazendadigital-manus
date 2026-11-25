@@ -10,15 +10,42 @@ export const COLUNAS_LISTA_FAZENDAS = [
   "Município/UF",
   "Área Total (ha)",
   "Pastagem (ha)",
-  "Subdivisões",
+  "Situação",
   "Ações",
 ] as const;
 
 export const SEM_VALOR_LISTA_FAZENDA = "—";
 
-/** O cadastro da fazenda não tem campo de área de pastagem. Não somar pasto. */
-export function pastagemHaCadastrada(): string {
-  return SEM_VALOR_LISTA_FAZENDA;
+/** Hectares de pastagem digitados no cadastro. Sem número, a lista mostra traço. Não soma subdivisão. */
+export function pastagemHaCadastrada(valor?: unknown): string {
+  return areaTotalHa(valor);
+}
+
+/** A lista abre de A até Z. A seta do nome inverte para Z até A. */
+export function ordenarFazendasPorNome<T extends { nome?: string | null }>(
+  lista: readonly T[],
+  crescente = true,
+): T[] {
+  const sentido = crescente ? 1 : -1;
+  return [...lista].sort(
+    (a, b) => sentido * String(a.nome ?? "").localeCompare(String(b.nome ?? ""), "pt-BR", {
+      sensitivity: "base",
+      numeric: true,
+    }),
+  );
+}
+
+/** A busca da lista olha o nome e o município já carregados nesta conta. */
+export function fazendaCombinaBusca(
+  fazenda: { nome?: string | null; cidade?: string | null; estado?: string | null },
+  busca: string,
+): boolean {
+  const termo = busca.trim().toLowerCase();
+  if (!termo) return true;
+  const local = municipioUf(fazenda.cidade, fazenda.estado);
+  return [fazenda.nome, fazenda.cidade, local].some((valor) =>
+    String(valor ?? "").toLowerCase().includes(termo),
+  );
 }
 
 export function municipioUf(cidade?: string | null, estado?: string | null): string {
@@ -38,6 +65,16 @@ export function areaTotalHa(valor: unknown): string {
   const numero = Number(normalizado);
   if (!Number.isFinite(numero)) return SEM_VALOR_LISTA_FAZENDA;
   return numero.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+/** Sem situação gravada, a fazenda segue ativa. Só "inativo" vira Inativa. */
+export function rotuloSituacaoFazenda(situacao?: string | null): "Ativa" | "Inativa" {
+  return situacao === "inativo" ? "Inativa" : "Ativa";
+}
+
+/** Verde de fazenda em uso e amarelo do botão Inativar. A cor fica só na palavra. */
+export function corSituacaoFazenda(situacao?: string | null): "#16A34A" | "#D97706" {
+  return situacao === "inativo" ? "#D97706" : "#16A34A";
 }
 
 /** Quantidade de pastos vinculados. Zero é dado real. Sem lista, não inventa número. */

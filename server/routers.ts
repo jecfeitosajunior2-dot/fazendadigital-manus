@@ -9033,6 +9033,8 @@ const fazendaFields = {
   area: z.string().optional(),
   areaReserva: z.string().optional(),
   areaLiquida: z.string().optional(),
+  areaPastagem: z.string().nullable().optional(),
+  codigoSisbov: z.string().nullable().optional(),
   endereco: z.string().optional(),
   cep: z.string().optional(),
   telefone: z.string().optional(),
@@ -10458,6 +10460,8 @@ const pessoaFieldsSchema = z.object({
   nomeContato: z.string().optional(),
   cidade: z.string().optional(),
   uf: z.string().max(2).optional(),
+  inscricaoEstadual: z.string().max(50).nullable().optional(),
+  cep: z.string().max(10).nullable().optional(),
 });
 
 function sessaoPessoa(ctx: { user: { id: number; sessionVersion?: number | null } }) {
@@ -10493,6 +10497,14 @@ const pessoasRouter = router({
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(({ ctx, input }) => pessoasOperacao.inativar(sessaoPessoa(ctx), input.id)),
+
+  deleteCheck: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(({ ctx, input }) => pessoasOperacao.conferirExclusao(sessaoPessoa(ctx), input.id)),
+
+  excluir: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(({ ctx, input }) => pessoasOperacao.excluir(sessaoPessoa(ctx), input.id)),
 
   reativar: protectedProcedure
     .input(z.object({ id: z.number() }))
