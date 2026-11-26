@@ -16,6 +16,7 @@ const BOTAO_NEUTRO =
 export type AvisoSubcategoria = {
   id: number;
   nome: string;
+  filha: boolean;
   podeExcluir: boolean;
   conferencia: "ok" | "falhou";
 };
@@ -41,6 +42,7 @@ export default function SubcategoriaAvisos({
   const atual = aviso ?? ultimo.current;
   const aberto = aviso != null;
   const confirmar = Boolean(atual && atual.podeExcluir && atual.conferencia === "ok");
+  const palavra = atual?.filha ? "subcategoria" : "categoria";
 
   return (
     <AlertDialog open={aberto} onOpenChange={(open) => { if (!open && !enviando) onFechar(); }}>
@@ -54,19 +56,19 @@ export default function SubcategoriaAvisos({
         <AlertDialogHeader>
           <AlertDialogTitle className="flex items-center gap-2 text-gray-900">
             <span className="material-icons text-[22px] text-red-500">warning</span>
-            {confirmar ? "Excluir subcategoria" : "Não é possível excluir a subcategoria"}
+            {confirmar ? `Excluir ${palavra}` : `Não é possível excluir a ${palavra}`}
           </AlertDialogTitle>
           <AlertDialogDescription asChild>
             <div className="text-sm text-gray-600">
               {atual?.conferencia === "falhou" ? (
                 <>
-                  <p>A subcategoria <Nome>{atual.nome}</Nome> não será excluída.</p>
+                  <p>A {palavra} <Nome>{atual.nome}</Nome> não será excluída.</p>
                   <p className="mt-3">A conferência dos vínculos não pôde ser concluída. Por segurança, a exclusão permanece bloqueada e nenhum registro foi alterado.</p>
                 </>
               ) : confirmar && atual ? (
-                <p>A subcategoria <Nome>{atual.nome}</Nome> será excluída.</p>
+                <p>A {palavra} <Nome>{atual.nome}</Nome> será excluída.</p>
               ) : atual ? (
-                <p>A subcategoria <Nome>{atual.nome}</Nome> não pode ser excluída.</p>
+                <p>A {palavra} <Nome>{atual.nome}</Nome> não pode ser excluída.</p>
               ) : null}
             </div>
           </AlertDialogDescription>

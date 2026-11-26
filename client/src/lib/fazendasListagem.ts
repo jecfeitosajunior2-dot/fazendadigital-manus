@@ -10,6 +10,7 @@ export const COLUNAS_LISTA_FAZENDAS = [
   "Município/UF",
   "Área Total (ha)",
   "Pastagem (ha)",
+  "Subdivisões",
   "Situação",
   "Ações",
 ] as const;
@@ -97,6 +98,31 @@ export const MSG_EXCLUIR_FAZENDA_BLOQUEADA =
 
 export function caminhoSubdivisoesDaFazenda(id: number): string {
   return `/fazendas/subdivisoes?fazendaId=${id}`;
+}
+
+export const FAZENDA_FICHA_PATH = "/fazendas/ficha";
+export const FAZENDA_LISTA_PATH = "/fazendas/lista-fazendas";
+
+export type AbaFichaFazenda = "dados" | "subdivisoes" | "benfeitorias";
+
+/** O nome abre os dados. O número de subdivisões abre essa aba. */
+export function caminhoFichaFazenda(id: number, aba: AbaFichaFazenda = "dados"): string {
+  return `${FAZENDA_FICHA_PATH}?id=${id}&aba=${aba}`;
+}
+
+export function fazendaIdDaFicha(busca: string): number | null {
+  const texto = busca.startsWith("?") ? busca.slice(1) : busca;
+  const bruto = new URLSearchParams(texto).get("id");
+  if (bruto == null || !/^\d+$/.test(bruto)) return null;
+  const id = Number(bruto);
+  return id > 0 ? id : null;
+}
+
+export function abaFichaDaBusca(busca: string): AbaFichaFazenda {
+  const texto = busca.startsWith("?") ? busca.slice(1) : busca;
+  const aba = new URLSearchParams(texto).get("aba");
+  if (aba === "subdivisoes" || aba === "benfeitorias") return aba;
+  return "dados";
 }
 
 export function fazendaIdDaBusca(busca: string): number | null {

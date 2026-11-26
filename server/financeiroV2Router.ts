@@ -474,4 +474,52 @@ export const financeiroV2Router = router({
         sessaoFinanceiro(ctx, PERMISSAO_INATIVAR_FINANCEIRO),
       ));
     }),
+
+  centrosRenomear: protectedProcedure
+    .input(z.object({
+      id: z.number().int().positive(),
+      nome: z.string().min(1).max(120),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const acesso = await donoDaOperacao(ctx, PERMISSAO_EDITAR_FINANCEIRO);
+      return gravarFinanceiro(() => financeiroNucleoService.renomearCentroCusto(
+        acesso.titularUserId,
+        input.id,
+        input.nome,
+        sessaoFinanceiro(ctx, PERMISSAO_EDITAR_FINANCEIRO),
+      ));
+    }),
+
+  centrosReativar: protectedProcedure
+    .input(z.object({ id: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      const acesso = await donoDaOperacao(ctx, PERMISSAO_INATIVAR_FINANCEIRO);
+      return gravarFinanceiro(() => financeiroNucleoService.reativarCentroCusto(
+        acesso.titularUserId,
+        input.id,
+        sessaoFinanceiro(ctx, PERMISSAO_INATIVAR_FINANCEIRO),
+      ));
+    }),
+
+  centrosDeleteCheck: protectedProcedure
+    .input(z.object({ id: z.number().int().positive() }))
+    .query(async ({ ctx, input }) => {
+      const acesso = await donoDaOperacao(ctx, PERMISSAO_INATIVAR_FINANCEIRO);
+      return gravarFinanceiro(() => financeiroNucleoService.conferirExclusaoCentroCusto(
+        acesso.titularUserId,
+        input.id,
+        sessaoFinanceiro(ctx, PERMISSAO_INATIVAR_FINANCEIRO),
+      ));
+    }),
+
+  centrosExcluir: protectedProcedure
+    .input(z.object({ id: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      const acesso = await donoDaOperacao(ctx, PERMISSAO_INATIVAR_FINANCEIRO);
+      return gravarFinanceiro(() => financeiroNucleoService.excluirCentroCusto(
+        acesso.titularUserId,
+        input.id,
+        sessaoFinanceiro(ctx, PERMISSAO_INATIVAR_FINANCEIRO),
+      ));
+    }),
 });

@@ -324,9 +324,15 @@ export const fazendasOperacao = {
       await autorizarFazenda(tx, sessao, id, "fazendas.visualizar");
       const [row] = await tx.select().from(fazendas).where(eq(fazendas.id, id)).limit(1);
       if (!row) recusar("fazenda_inexistente");
+      const situacoes = await situacoesDaConta(tx, row.userId);
       const pastagens = await pastagensDaConta(tx, row.userId);
       const codigos = await codigosSisbovDaConta(tx, row.userId);
-      return { ...row, areaPastagem: pastagens?.get(id) ?? null, codigoSisbov: codigos?.get(id) ?? null };
+      return {
+        ...row,
+        situacao: situacoes?.get(id) ?? "ativo",
+        areaPastagem: pastagens?.get(id) ?? null,
+        codigoSisbov: codigos?.get(id) ?? null,
+      };
     });
   },
 

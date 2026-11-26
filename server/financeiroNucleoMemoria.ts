@@ -328,6 +328,12 @@ export function criarStore(opts?: { deadlocksRestantes?: number }): FinanceiroNu
       const c = state.centros.find(x => x.id === centroId && x.userId === userId);
       if (c) Object.assign(c, patch);
     },
+    async contarUsoCentro(userId, centroId) {
+      return state.apropriacoes.filter(item => item.userId === userId && item.centroCustoId === centroId).length;
+    },
+    async deleteCentro(userId, id) {
+      state.centros = state.centros.filter(item => !(item.id === id && item.userId === userId));
+    },
     async listCentros(userId) {
       return state.centros.filter(c => c.userId === userId);
     },

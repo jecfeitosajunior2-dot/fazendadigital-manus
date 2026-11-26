@@ -47,6 +47,10 @@ const ROTAS = [
   "centrosList",
   "centrosCreate",
   "centrosInativar",
+  "centrosRenomear",
+  "centrosReativar",
+  "centrosDeleteCheck",
+  "centrosExcluir",
 ];
 
 describe("financeiro V2 — contrato da conta", () => {

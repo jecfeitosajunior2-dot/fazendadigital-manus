@@ -75,6 +75,7 @@ import {
 import DiagnosticoAt05Page from "./pages/DiagnosticoAt05Page";
 import DiagnosticoTruTestS3Page from "./pages/DiagnosticoTruTestS3Page";
 import FarmRegistrationPage from "./pages/FarmRegistrationPage";
+import FazendaFichaPage from "./pages/FazendaFichaPage";
 import BenfeitoriasListPage from "./pages/BenfeitoriasListPage";
 import BenfeitoriaRegistrationPage from "./pages/BenfeitoriaRegistrationPage";
 import ProductRegistrationPage from "./pages/ProductRegistrationPage";
@@ -126,12 +127,14 @@ function ProtectedRoutes() {
       <Route path="/fazendas/benfeitorias" component={BenfeitoriasListPage} />
       <Route path="/fazendas/benfeitorias/cadastro" component={BenfeitoriaRegistrationPage} />
       <Route path="/fazendas/lista-fazendas" component={FarmsListPage} />
+      <Route path="/fazendas/ficha" component={FazendaFichaPage} />
       <Route path="/fazendas/cadastro" component={FarmRegistrationPage} />
       <Route path="/fazendas/subdivisoes" component={SubdivisoesPage} />
 
       {/* Administrativo */}
       <Route path="/administrativo/visao-geral" component={RedirectAdministrativoFazendas} />
       <Route path="/administrativo/categorias-financeiras" component={CategoriasFinanceirasPage} />
+      <Route path="/administrativo/centros-de-custos/cadastro" component={CentrosCustoPendentePage} />
       <Route path="/administrativo/centros-de-custos" component={CentrosCustoPendentePage} />
       <Route path="/benfeitorias/visao-geral" component={() => <RedirectTo to="/fazendas/benfeitorias" />} />
       <Route path="/benfeitorias/lista-benfeitorias" component={() => <RedirectTo to="/fazendas/benfeitorias" />} />

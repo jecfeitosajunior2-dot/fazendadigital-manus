@@ -76,10 +76,14 @@ describe("menu Administrativo", () => {
     expect(benfeitorias).toContain("trpc.benfeitorias.list");
   });
 
-  it("categorias divide receitas e despesas e centros avisam que a tela ainda não grava", () => {
+  it("categorias divide receitas e despesas e centros mostra a pesquisa e o botão", () => {
     expect(app).toContain('path="/administrativo/categorias-financeiras"');
     expect(app).toContain("component={CategoriasFinanceirasPage}");
+    expect(app).toContain('path="/administrativo/centros-de-custos/cadastro"');
     expect(app).toContain('path="/administrativo/centros-de-custos"');
+    expect(app.indexOf('path="/administrativo/centros-de-custos/cadastro"')).toBeLessThan(
+      app.indexOf('path="/administrativo/centros-de-custos"'),
+    );
     expect(app).toContain("component={CentrosCustoPendentePage}");
     expect(categorias).toContain("Categorias Financeiras");
     expect(categorias).toContain("Categorias de Receitas");
@@ -87,6 +91,8 @@ describe("menu Administrativo", () => {
     expect(categorias).toContain("arrow_drop_down");
     expect(categorias).toContain("arrow_right");
     expect(categorias).toContain("Adicionar subcategoria em");
+    expect(categorias).toContain("Nova categoria de receitas");
+    expect(categorias).toContain("Nova categoria de despesas");
     expect(categorias).toContain("EditActionIcon");
     expect(categorias).toContain("DeleteActionIcon");
     expect(categorias).toContain("placeholder=\"Subcategoria\"");
@@ -96,8 +102,25 @@ describe("menu Administrativo", () => {
     expect(categorias).toContain("trpc.financeiroV2.categoriasList");
     expect(categorias).toContain("trpc.financeiroV2.categoriasCreate");
     expect(categorias).not.toContain("Nada é gravado nesta página.");
-    expect(pendente).not.toContain("trpc.");
-    expect(pendente).toContain("Nada é gravado nesta página.");
+    expect(pendente).toContain("Centro de Custos");
+    expect(pendente).toContain('fontSize: "24px"');
+    expect(pendente).toContain('fontWeight: 600');
+    expect(pendente).toContain('color: "#172033"');
+    expect(pendente).toContain("Buscar centro de custo");
+    expect(pendente).toContain("Novo Centro de Custo");
+    expect(pendente).toContain("Situação");
+    expect(pendente).toContain("Ações");
+    expect(pendente).toContain("trpc.financeiroV2.centrosList");
+    expect(pendente).toContain("Cadastrar Centro de Custo");
+    expect(pendente).toContain("rounded-full uppercase tracking-wide");
+    expect(pendente).toContain("Informações gerais");
+    expect(pendente).toContain("trpc.financeiroV2.centrosCreate");
+    expect(pendente).toContain("trpc.financeiroV2.centrosRenomear");
+    expect(pendente).toContain("Editar Centro de Custo");
+    expect(pendente).toContain("CentroCustoListaAvisos");
+    expect(pendente).toContain("Excluir");
+    expect(pendente).not.toContain("Código");
+    expect(pendente).not.toContain("Nada é gravado nesta página.");
     expect(routerFinanceiro).toContain("categoriasCreate:");
     expect(routerFinanceiro).toContain("centrosCreate:");
     expect(routerFinanceiro).toContain("PERMISSAO_CRIAR_FINANCEIRO");

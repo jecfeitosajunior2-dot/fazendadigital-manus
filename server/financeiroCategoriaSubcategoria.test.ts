@@ -49,8 +49,25 @@ describe("subcategoria financeira", () => {
       message: 'Não é possível excluir a subcategoria "Bezerros".',
     });
     expect((await svc.listarCategorias(10)).some((item) => item.id === deNovo.id)).toBe(true);
-    await expect(svc.excluirSubcategoria(10, pai.id)).rejects.toMatchObject({
-      message: "Esta ação vale para a subcategoria.",
+    expect(await svc.conferirExclusaoSubcategoria(10, pai.id)).toMatchObject({
+      nome: "Vendas de Animais",
+      canDelete: false,
+      filha: false,
     });
+    await expect(svc.excluirSubcategoria(10, pai.id)).rejects.toMatchObject({
+      message: 'Não é possível excluir a categoria "Vendas de Animais".',
+    });
+  });
+
+  it("exclui a categoria pai quando ela não tem subcategoria nem lançamento", async () => {
+    const { svc } = await familia();
+    const solta = await svc.criarCategoria(10, { nome: "3", tipo: "saida" });
+    expect(await svc.conferirExclusaoSubcategoria(10, solta.id)).toMatchObject({
+      nome: "3",
+      canDelete: true,
+      filha: false,
+    });
+    await svc.excluirSubcategoria(10, solta.id);
+    expect((await svc.listarCategorias(10)).some((item) => item.id === solta.id)).toBe(false);
   });
 });

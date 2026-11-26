@@ -8,6 +8,7 @@ import {
   MSG_EXCLUIR_FAZENDA_BLOQUEADA,
   MSG_INATIVAR_FAZENDA_INDISPONIVEL,
   areaTotalHa,
+  caminhoFichaFazenda,
   caminhoSubdivisoesDaFazenda,
   corSituacaoFazenda,
   fazendaCombinaBusca,
@@ -29,15 +30,21 @@ const lista = paginas.slice(
 );
 
 describe("colunas da lista de fazendas", () => {
-  it("segue as seis colunas nesta ordem", () => {
+  it("segue as sete colunas nesta ordem", () => {
     expect(COLUNAS_LISTA_FAZENDAS).toEqual([
       "Nome",
       "Município/UF",
       "Área Total (ha)",
       "Pastagem (ha)",
+      "Subdivisões",
       "Situação",
       "Ações",
     ]);
+    const pagina = lista.slice(lista.indexOf("export function FarmsListPage"));
+    expect(pagina.indexOf("Subdivisões")).toBeLessThan(pagina.indexOf(">Situação<") === -1
+      ? pagina.indexOf("rotuloSituacaoFazenda")
+      : pagina.indexOf("Situação"));
+    expect(pagina).toContain("quantidadeSubdivisoes");
   });
 
   it("mostra Ativa ou Inativa sem tratar o nome como situação", () => {
@@ -124,6 +131,14 @@ describe("colunas da lista de fazendas", () => {
     expect(menu).toContain("more_vert");
     expect(MSG_INATIVAR_FAZENDA_INDISPONIVEL).toContain("Nada é alterado");
     expect(MSG_EXCLUIR_FAZENDA_BLOQUEADA).toContain("bloqueada");
+  });
+
+  it("abre a ficha da fazenda que já está na conta", () => {
+    const pagina = lista.slice(lista.indexOf("export function FarmsListPage"));
+    expect(caminhoFichaFazenda(4)).toBe("/fazendas/ficha?id=4&aba=dados");
+    expect(caminhoFichaFazenda(4, "subdivisoes")).toBe("/fazendas/ficha?id=4&aba=subdivisoes");
+    expect(pagina).toContain('caminhoFichaFazenda(f.id, "subdivisoes")');
+    expect(pagina).toContain("caminhoFichaFazenda(f.id)");
   });
 
   it("abre só a subdivisão da fazenda que já está na conta", () => {

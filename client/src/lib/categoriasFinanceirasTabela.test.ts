@@ -41,6 +41,18 @@ describe("tabela de categorias financeiras", () => {
     expect(separado.despesas.map((categoria) => categoria.nome)).toEqual([...ORDEM_PAIS_DESPESA]);
   });
 
+  it("deixa a categoria nova no fim, depois da ordem da fazenda", () => {
+    const separado = separarCategoriasFinanceiras([
+      item(1, "Seguro", "saida"),
+      item(2, "Nutrição", "saida"),
+      item(3, "Arrendamento", "saida"),
+      item(4, "Zeta", "entrada"),
+      item(5, "Vendas de Animais", "entrada"),
+    ]);
+    expect(separado.despesas.map((categoria) => categoria.nome)).toEqual(["Nutrição", "Arrendamento", "Seguro"]);
+    expect(separado.receitas.map((categoria) => categoria.nome)).toEqual(["Vendas de Animais", "Zeta"]);
+  });
+
   it("mostra a seta só no pai com filho e esconde o filho quando o pai está fechado", () => {
     const separado = separarCategoriasFinanceiras([
       item(1, "Venda de animais", "entrada"),

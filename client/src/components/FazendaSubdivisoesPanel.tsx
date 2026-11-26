@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -24,10 +24,16 @@ import { ImportarCoordenadasModal } from "@/components/ImportarCoordenadasModal"
 import { FazendaSubdivisaoMapaModal } from "@/components/FazendaSubdivisaoMapaModal";
 import { useConfirm } from "@/components/ConfirmDialog";
 import TableHorizontalScroll from "@/components/TableHorizontalScroll";
-import TablePaginationFooter from "@/components/TablePaginationFooter";
-import { DeleteActionIcon, EditActionIcon, TableIconButton } from "@/components/icons/FarmActionIcons";
+import { ordenarFazendasPorNome } from "@/lib/fazendasListagem";
+import { DeleteActionIcon, EditActionIcon } from "@/components/icons/FarmActionIcons";
 import SemCoordenadasIcon from "@/components/icons/SemCoordenadasIcon";
 import { Map } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 const FD_PRIMARY = "#4ECDC4";
 const TOAST_ID_OBRIGATORIOS = "subdivisao-campos-obrigatorios";
 
@@ -163,26 +169,80 @@ function formatArea(value: unknown, unidade?: string | null) {
   const number = parseNumber(value);
   if (number === null) {
     const raw = String(value ?? "").trim();
-    return raw ? `${raw} ${unit}` : "-";
+    return raw ? `${raw} ${unit}` : "—";
   }
   return `${number.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} ${unit}`;
-}
-
-function formatCapacidade(value: unknown) {
-  const number = parseNumber(value);
-  if (number === null) return "-";
-  return `${number.toLocaleString("pt-BR", { maximumFractionDigits: 0 })} UA`;
 }
 
 function statusOperacionalLabel(status?: string | null) {
   return STATUS_OPERACIONAL.find(s => s.value === status)?.label ?? "Disponível";
 }
 
-function statusOperacionalClass(status?: string | null) {
-  if (status === "interditado" || status === "reforma") return "bg-red-50 text-red-600 border-red-100";
-  if (status === "descanso" || status === "reserva") return "bg-amber-50 text-amber-700 border-amber-100";
-  if (status === "sem_uso" || status === "vazio") return "bg-gray-50 text-gray-500 border-gray-200";
-  return "bg-teal-50 text-teal-700 border-teal-100";
+function corSituacaoSubdivisao(status?: string | null) {
+  if (status === "interditado" || status === "reforma") return "#DC2626";
+  if (status === "descanso" || status === "reserva") return "#D97706";
+  if (status === "sem_uso" || status === "vazio") return "#6B7280";
+  return "#16A34A";
+}
+
+const fonteLista = "'Inter', sans-serif";
+const cabecalhoLista = { fontFamily: fonteLista, fontSize: "12px", fontWeight: 500 };
+const infoLista = { fontFamily: fonteLista, fontSize: "14px", fontWeight: 400 };
+
+function textoTipoDivisao(tipo?: string | null) {
+  const texto = String(tipo ?? "").trim();
+  return texto || "—";
+}
+
+function SubdivisaoAcoes({
+  nome,
+  temMapa,
+  onEditar,
+  onMapa,
+  onExcluir,
+}: {
+  nome: string;
+  temMapa: boolean;
+  onEditar: () => void;
+  onMapa: () => void;
+  onExcluir: () => void;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex h-10 w-10 items-center justify-center rounded text-gray-600 hover:bg-gray-100 hover:text-gray-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#4ECDC4]"
+          aria-label={`Ações de ${nome}`}
+        >
+          <span className="material-icons text-[20px]">more_vert</span>
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" side="bottom" collisionPadding={8} className="min-w-[160px] z-[100]">
+        <DropdownMenuItem
+          className="text-[12px] cursor-pointer gap-2 text-[#586168] focus:text-white data-[highlighted]:text-white"
+          onClick={onEditar}
+        >
+          <EditActionIcon size={16} style={{ color: "currentColor" }} />
+          Editar
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          className={`text-[12px] cursor-pointer gap-2 focus:text-white data-[highlighted]:text-white ${temMapa ? "text-[#7CB342]" : "text-[#586168]"}`}
+          onClick={onMapa}
+        >
+          {temMapa ? <Map size={16} strokeWidth={1.75} /> : <SemCoordenadasIcon size={16} />}
+          Ver no mapa
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          className="text-[12px] cursor-pointer gap-2 text-[#DC2626] focus:text-white data-[highlighted]:text-white"
+          onClick={onExcluir}
+        >
+          <DeleteActionIcon size={16} style={{ color: "currentColor" }} />
+          Excluir
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 }
 
 function pastagemAplicavel(tipo?: string | null) {
@@ -206,27 +266,17 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
     id: number;
     nome: string;
   } | null>(null);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
+  const [nomeCrescente, setNomeCrescente] = useState(true);
 
   const { data: subdivisoes = [], isLoading } = trpc.pastos.listByFazenda.useQuery(
     { fazendaId },
     { enabled: fazendaId > 0 }
   );
 
-  const totalPages = Math.max(1, Math.ceil(subdivisoes.length / pageSize));
-  const pageItems = useMemo(
-    () => subdivisoes.slice((page - 1) * pageSize, page * pageSize),
-    [subdivisoes, page, pageSize],
+  const subdivisoesOrdenadas = useMemo(
+    () => ordenarFazendasPorNome(subdivisoes, nomeCrescente),
+    [subdivisoes, nomeCrescente],
   );
-
-  useEffect(() => {
-    setPage(1);
-  }, [fazendaId]);
-
-  useEffect(() => {
-    if (page > totalPages) setPage(totalPages);
-  }, [page, totalPages]);
   const invalidate = () => {
     utils.pastos.listByFazenda.invalidate({ fazendaId });
     utils.pastos.list.invalidate();
@@ -390,14 +440,8 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
 
   return (
     <div id="fazenda-subdivisoes" className="mt-6 bg-white border border-gray-200 rounded shadow-sm overflow-hidden">
-      <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
-        <h2
-          className="text-[20px] font-semibold text-gray-900 min-w-0 flex-1"
-          style={{ fontFamily: "Fraunces, serif" }}
-        >
-          Subdivisões Cadastradas da {fazenda.nome}
-        </h2>
-        <div className="flex flex-wrap items-center gap-2 shrink-0 ml-auto">
+      <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center justify-end gap-3">
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
           <button
             type="button"
             onClick={toggleNovaSubdivisaoForm}
@@ -621,54 +665,47 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
       )}
 
       {!showForm && (
-      <TableHorizontalScroll
-        fitWidth
-        footer={
-          !isLoading && subdivisoes.length > 0 ? (
-            <TablePaginationFooter
-              pageSize={pageSize}
-              page={page}
-              totalItems={subdivisoes.length}
-              onPageChange={setPage}
-              onPageSizeChange={size => {
-                setPageSize(size);
-                setPage(1);
-              }}
-              itemLabel="subdivisões"
-            />
-          ) : undefined
-        }
-      >
-        <table className="w-full min-w-[860px] table-fixed text-[11px]">
+      <TableHorizontalScroll fitWidth>
+        <table className="w-full min-w-[640px] table-fixed">
           <colgroup>
+            <col style={{ width: "28%" }} />
+            <col style={{ width: "22%" }} />
             <col style={{ width: "16%" }} />
-            <col style={{ width: "8%" }} />
-            <col style={{ width: "9%" }} />
-            <col style={{ width: "12%" }} />
-            <col style={{ width: "13%" }} />
-            <col style={{ width: "16%" }} />
-            <col style={{ width: "12%" }} />
+            <col style={{ width: "20%" }} />
             <col style={{ width: "14%" }} />
           </colgroup>
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
-              <th className="pl-4 pr-2 py-2.5 text-left align-middle whitespace-nowrap text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Nome</th>
-              <th className="pl-2 pr-3 py-2.5 text-left align-middle whitespace-nowrap text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Sigla</th>
-              <th className="pl-2 pr-3 py-2.5 text-center align-middle whitespace-nowrap text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Área</th>
-              <th className="px-3 py-2.5 text-center align-middle whitespace-nowrap text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Capacidade (UA)</th>
-              <th className="px-3 py-2.5 text-left align-middle whitespace-nowrap text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Tipo de Divisão</th>
-              <th className="px-3 py-2.5 text-left align-middle whitespace-nowrap text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Tipo de Pastagem</th>
-              <th className="px-3 py-2.5 text-center align-middle whitespace-nowrap text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Status</th>
-              <th className="px-3 py-2.5 text-center align-middle whitespace-nowrap text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Ações</th>
+              <th
+                aria-sort={nomeCrescente ? "ascending" : "descending"}
+                className="px-3 py-2 text-left text-gray-500 uppercase whitespace-nowrap"
+                style={cabecalhoLista}
+              >
+                <button
+                  type="button"
+                  onClick={() => setNomeCrescente((atual) => !atual)}
+                  className="inline-flex items-center gap-0.5 uppercase hover:text-gray-700"
+                  aria-label={nomeCrescente ? "Ordenar nome de Z até A" : "Ordenar nome de A até Z"}
+                >
+                  Nome
+                  <span className="material-icons text-[18px] leading-none text-gray-400" aria-hidden>
+                    {nomeCrescente ? "arrow_drop_up" : "arrow_drop_down"}
+                  </span>
+                </button>
+              </th>
+              <th className="px-3 py-2 text-left text-gray-500 uppercase whitespace-nowrap" style={cabecalhoLista}>Tipo</th>
+              <th className="px-3 py-2 text-right text-gray-500 uppercase whitespace-nowrap" style={cabecalhoLista}>Área</th>
+              <th className="px-3 py-2 text-center text-gray-500 uppercase whitespace-nowrap" style={cabecalhoLista}>Situação</th>
+              <th className="px-3 py-2 text-center text-gray-500 uppercase whitespace-nowrap" style={cabecalhoLista}>Ações</th>
             </tr>
           </thead>
           <tbody>
             {isLoading && (
-              <tr><td colSpan={8} className="px-4 py-6 text-center text-gray-400">Carregando...</td></tr>
+              <tr><td colSpan={5} className="px-3 py-4 text-center text-gray-400" style={infoLista}>Carregando...</td></tr>
             )}
             {!isLoading && subdivisoes.length === 0 && !showForm && (
               <tr>
-                <td colSpan={8} className="px-4 py-12 text-center">
+                <td colSpan={5} className="px-4 py-12 text-center">
                   <span className="material-icons text-[36px] text-gray-300 block mb-3">grid_view</span>
                   <p className="text-[12px] font-medium text-gray-600">
                     Nenhuma subdivisão cadastrada para esta fazenda.
@@ -679,65 +716,33 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
                 </td>
               </tr>
             )}
-            {pageItems.map(s => (
-              <tr key={s.id} className="border-t border-gray-50 hover:bg-gray-50/60">
-                <td className="min-w-0 overflow-hidden pl-4 pr-2 py-2.5 text-left align-middle font-medium text-gray-800">
+            {subdivisoesOrdenadas.map(s => (
+              <tr key={s.id} className="border-t border-gray-50 hover:bg-gray-50/50">
+                <td className="min-w-0 overflow-hidden px-3 py-2 text-left align-middle text-gray-700" style={infoLista}>
                   <span className="block truncate" title={s.nome}>{s.nome}</span>
                 </td>
-                <td className="min-w-0 overflow-hidden pl-2 pr-3 py-2.5 text-left align-middle text-gray-600">
-                  <span className="block truncate">{s.sigla || "-"}</span>
+                <td className="min-w-0 overflow-hidden px-3 py-2 text-left align-middle text-gray-700" style={infoLista}>
+                  <span className="block truncate" title={textoTipoDivisao(s.tipo)}>{textoTipoDivisao(s.tipo)}</span>
                 </td>
-                <td className="pl-2 pr-3 py-2.5 text-center align-middle whitespace-nowrap tabular-nums text-gray-700">{formatArea(s.area, fazenda.unidadeArea)}</td>
-                <td className="px-3 py-2.5 text-center align-middle whitespace-nowrap tabular-nums text-gray-700">{formatCapacidade(s.capacidade)}</td>
-                <td className="min-w-0 overflow-hidden px-3 py-2.5 text-left align-middle text-gray-600">
-                  <span className="block truncate" title={s.tipo || "-"}>{s.tipo || "-"}</span>
+                <td className="px-3 py-2 text-right align-middle whitespace-nowrap tabular-nums text-gray-700" style={infoLista}>{formatArea(s.area, fazenda.unidadeArea)}</td>
+                <td className="px-3 py-2 text-center align-middle whitespace-nowrap" style={{ ...infoLista, color: corSituacaoSubdivisao(s.status) }}>
+                  {statusOperacionalLabel(s.status)}
                 </td>
-                <td className="min-w-0 overflow-hidden px-3 py-2.5 text-left align-middle text-gray-600">
-                  <span className="block truncate" title={s.tipoPastagem || (pastagemAplicavel(s.tipo) ? "-" : "Não aplicável")}>
-                    {s.tipoPastagem || (pastagemAplicavel(s.tipo) ? "-" : "Não aplicável")}
-                  </span>
-                </td>
-                <td className="px-3 py-2.5 text-center align-middle whitespace-nowrap">
-                  <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-medium ${statusOperacionalClass(s.status)}`}>
-                    {statusOperacionalLabel(s.status)}
-                  </span>
-                </td>
-                <td className="px-3 py-2.5 text-center align-middle whitespace-nowrap">
-                  <div className="inline-flex items-center justify-center gap-1">
-                    <TableIconButton label="Editar" onClick={() => startEdit(s)} tone="neutral">
-                      <EditActionIcon size={17} />
-                    </TableIconButton>
-                    <TableIconButton
-                      label="Excluir"
-                      onClick={() => void handleDeleteSubdivisao({ id: s.id, nome: s.nome })}
-                      tone="danger"
-                    >
-                      <DeleteActionIcon size={17} />
-                    </TableIconButton>
-                    <button
-                      type="button"
-                      onClick={() => {
+                <td className="px-3 py-2 text-center align-middle whitespace-nowrap">
+                  <div className="flex items-center justify-center">
+                    <SubdivisaoAcoes
+                      nome={s.nome}
+                      temMapa={Boolean(s.coordenadas)}
+                      onEditar={() => startEdit(s)}
+                      onMapa={() => {
                         if (!s.coordenadas) {
                           toast.info("Use o botão Importar Coordenadas no topo para importar o KML da fazenda.");
                           return;
                         }
                         setMapaPastoDestaque({ id: s.id, nome: s.nome });
                       }}
-                      title={s.coordenadas ? "Ver no mapa da fazenda" : "Sem coordenadas — use Importar Coordenadas no topo"}
-                      aria-label={s.coordenadas ? "Ver no mapa da fazenda" : "Sem coordenadas"}
-                      className={cn(
-                        "inline-flex h-8 w-8 items-center justify-center rounded-lg border border-transparent transition-all duration-150 active:scale-[0.96]",
-                        s.coordenadas
-                          ? "text-[#7CB342] hover:bg-green-50"
-                          : "hover:bg-slate-100/90",
-                      )}
-                    >
-                      {s.coordenadas ? (
-                        <Map size={17} strokeWidth={1.75} className="shrink-0" aria-hidden />
-                      ) : (
-                        <SemCoordenadasIcon size={17} />
-                      )}
-                    </button>
+                      onExcluir={() => { void handleDeleteSubdivisao({ id: s.id, nome: s.nome }); }}
+                    />
                   </div>
                 </td>
               </tr>

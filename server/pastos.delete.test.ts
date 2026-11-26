@@ -128,7 +128,9 @@ describe("pastos.delete bloqueada", () => {
     expect(painel).toContain("onError: e => toast.error(e.message)");
     expect(folha).toContain("trpc.pastos.delete.useMutation");
     expect(folha).toContain("onError: e => toast.error(e.message)");
-    expect(painel).toContain('label="Excluir"');
+    expect(painel).toContain("more_vert");
+    expect(painel).toContain("Ver no mapa");
+    expect(painel).toContain("Excluir");
     expect(folha).toContain('confirm("Remover este pasto?")');
   });
 });

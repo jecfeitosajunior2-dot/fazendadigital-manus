@@ -491,6 +491,8 @@ export type FinanceiroNucleoTx = {
   findCentro(userId: number, id: number): Promise<FinCentroRow | null>;
   insertCentro(row: Omit<FinCentroRow, "id">): Promise<number>;
   updateCentro(userId: number, id: number, patch: Partial<Pick<FinCentroRow, "nome" | "fazendaId" | "ativo">>): Promise<void>;
+  contarUsoCentro(userId: number, centroId: number): Promise<number | null>;
+  deleteCentro(userId: number, id: number): Promise<void>;
   listCentros(userId: number): Promise<FinCentroRow[]>;
   revalidarSessao?(sessao: SessaoFinanceiro): Promise<AcessoFinanceiro>;
 };
@@ -924,9 +926,21 @@ async function subcategoriaDoTitular(tx: FinanceiroNucleoTx, userId: number, id:
   return cat;
 }
 
-async function usoDaSubcategoria(tx: FinanceiroNucleoTx, userId: number, id: number) {
+function mensagemVinculoOpaco(filha: boolean) {
+  return filha
+    ? MSG_SUBCATEGORIA_VINCULO_OPACO
+    : "Não foi possível conferir os vínculos desta categoria. Nada foi apagado.";
+}
+
+async function categoriaDoTitular(tx: FinanceiroNucleoTx, userId: number, id: number) {
+  const cat = await tx.findCategoria(userId, id);
+  if (!cat) falharSubcategoria("Categoria não encontrada.", "NOT_FOUND");
+  return cat;
+}
+
+async function usoDaCategoria(tx: FinanceiroNucleoTx, userId: number, id: number, filha: boolean) {
   const uso = await tx.contarUsoCategoria(userId, id);
-  if (uso == null) falharSubcategoria(MSG_SUBCATEGORIA_VINCULO_OPACO, "PRECONDITION_FAILED");
+  if (uso == null) falharSubcategoria(mensagemVinculoOpaco(filha), "PRECONDITION_FAILED");
   const filhos = (await tx.listCategorias(userId)).filter((item) => item.categoriaPaiId === id).length;
   return uso + filhos;
 }
@@ -1935,9 +1949,10 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
       return store.transaction(async tx => {
         const acesso = await abrirSessaoFinanceiro(tx, userId, sessao);
         fecharFazendasFinanceiro(acesso, []);
-        const cat = await subcategoriaDoTitular(tx, userId, id);
-        const uso = await usoDaSubcategoria(tx, userId, cat.id);
-        return { nome: cat.nome, canDelete: uso === 0 };
+        const cat = await categoriaDoTitular(tx, userId, id);
+        const filha = cat.categoriaPaiId != null;
+        const uso = await usoDaCategoria(tx, userId, cat.id, filha);
+        return { nome: cat.nome, canDelete: uso === 0, filha };
       });
     },
 
@@ -1945,12 +1960,14 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
       return store.transaction(async tx => {
         const acesso = await abrirSessaoFinanceiro(tx, userId, sessao);
         fecharFazendasFinanceiro(acesso, []);
-        const cat = await subcategoriaDoTitular(tx, userId, id);
-        const uso = await usoDaSubcategoria(tx, userId, cat.id);
-        if (uso > 0) falharSubcategoria(`Não é possível excluir a subcategoria "${cat.nome}".`, "PRECONDITION_FAILED");
+        const cat = await categoriaDoTitular(tx, userId, id);
+        const filha = cat.categoriaPaiId != null;
+        const uso = await usoDaCategoria(tx, userId, cat.id, filha);
+        const palavra = filha ? "subcategoria" : "categoria";
+        if (uso > 0) falharSubcategoria(`Não é possível excluir a ${palavra} "${cat.nome}".`, "PRECONDITION_FAILED");
         await tx.deleteCategoria(userId, cat.id);
         const ainda = await tx.findCategoria(userId, cat.id);
-        if (ainda) falharSubcategoria(MSG_SUBCATEGORIA_VINCULO_OPACO, "PRECONDITION_FAILED");
+        if (ainda) falharSubcategoria(mensagemVinculoOpaco(filha), "PRECONDITION_FAILED");
         return { success: true };
       });
     },
@@ -1991,6 +2008,59 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
         if (!centro) toTrpc("Centro de custo não encontrado.", "NOT_FOUND");
         fecharFazendasFinanceiro(acesso, [centro.fazendaId]);
         await tx.updateCentro(userId, id, { ativo: false });
+        return { success: true };
+      });
+    },
+
+    async renomearCentroCusto(userId: number, id: number, nomeInformado: string, sessao?: SessaoFinanceiro) {
+      const nome = nomeInformado.trim();
+      if (!nome) toTrpc("Informe o nome do centro de custo.");
+      if (nome.length > 120) toTrpc("O nome do centro de custo pode ter no máximo 120 caracteres.");
+      return store.transaction(async tx => {
+        const acesso = await abrirSessaoFinanceiro(tx, userId, sessao);
+        const centro = await tx.findCentro(userId, id);
+        if (!centro) toTrpc("Centro de custo não encontrado.", "NOT_FOUND");
+        fecharFazendasFinanceiro(acesso, [centro.fazendaId]);
+        await tx.updateCentro(userId, id, { nome });
+        return { success: true };
+      });
+    },
+
+    async reativarCentroCusto(userId: number, id: number, sessao?: SessaoFinanceiro) {
+      return store.transaction(async tx => {
+        const acesso = await abrirSessaoFinanceiro(tx, userId, sessao);
+        const centro = await tx.findCentro(userId, id);
+        if (!centro) toTrpc("Centro de custo não encontrado.", "NOT_FOUND");
+        fecharFazendasFinanceiro(acesso, [centro.fazendaId]);
+        await tx.updateCentro(userId, id, { ativo: true });
+        return { success: true };
+      });
+    },
+
+    async conferirExclusaoCentroCusto(userId: number, id: number, sessao?: SessaoFinanceiro) {
+      return store.transaction(async tx => {
+        const acesso = await abrirSessaoFinanceiro(tx, userId, sessao);
+        const centro = await tx.findCentro(userId, id);
+        if (!centro) toTrpc("Centro de custo não encontrado.", "NOT_FOUND");
+        fecharFazendasFinanceiro(acesso, [centro.fazendaId]);
+        const uso = await tx.contarUsoCentro(userId, centro.id);
+        if (uso == null) falharSubcategoria("Não foi possível conferir os vínculos deste centro de custo. Nada foi apagado.", "PRECONDITION_FAILED");
+        return { nome: centro.nome, canDelete: uso === 0 };
+      });
+    },
+
+    async excluirCentroCusto(userId: number, id: number, sessao?: SessaoFinanceiro) {
+      return store.transaction(async tx => {
+        const acesso = await abrirSessaoFinanceiro(tx, userId, sessao);
+        const centro = await tx.findCentro(userId, id);
+        if (!centro) toTrpc("Centro de custo não encontrado.", "NOT_FOUND");
+        fecharFazendasFinanceiro(acesso, [centro.fazendaId]);
+        const uso = await tx.contarUsoCentro(userId, centro.id);
+        if (uso == null) falharSubcategoria("Não foi possível conferir os vínculos deste centro de custo. Nada foi apagado.", "PRECONDITION_FAILED");
+        if (uso > 0) falharSubcategoria(`Não é possível excluir o centro de custo "${centro.nome}".`, "PRECONDITION_FAILED");
+        await tx.deleteCentro(userId, centro.id);
+        const ainda = await tx.findCentro(userId, centro.id);
+        if (ainda) falharSubcategoria("Não foi possível conferir os vínculos deste centro de custo. Nada foi apagado.", "PRECONDITION_FAILED");
         return { success: true };
       });
     },
@@ -2669,6 +2739,20 @@ export function createFinanceiroNucleoTxFromDrizzle(drizzleTx: FinanceiroDrizzle
         },
         async updateCentro(userId, id, patch) {
           await drizzleTx.update(financeiroCentrosCusto).set(patch)
+            .where(and(eq(financeiroCentrosCusto.id, id), eq(financeiroCentrosCusto.userId, userId)));
+        },
+        async contarUsoCentro(userId, centroId) {
+          try {
+            const [apropriacao] = await drizzleTx.select({ total: count() }).from(financeiroApropriacoes)
+              .where(and(eq(financeiroApropriacoes.userId, userId), eq(financeiroApropriacoes.centroCustoId, centroId)));
+            return Number(apropriacao?.total ?? 0);
+          } catch (error) {
+            if (tabelaAusente(error)) return null;
+            throw error;
+          }
+        },
+        async deleteCentro(userId, id) {
+          await drizzleTx.delete(financeiroCentrosCusto)
             .where(and(eq(financeiroCentrosCusto.id, id), eq(financeiroCentrosCusto.userId, userId)));
         },
         async listCentros(userId) {

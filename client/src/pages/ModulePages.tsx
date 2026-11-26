@@ -12,6 +12,8 @@ import {
   ordenarFazendasPorNome,
   municipioUf,
   pastagemHaCadastrada,
+  quantidadeSubdivisoes,
+  caminhoFichaFazenda,
   corSituacaoFazenda,
   rotuloSituacaoFazenda,
 } from "@/lib/fazendasListagem";
@@ -409,6 +411,19 @@ export function FarmsListPage() {
     onError: (erro) => toast.error(erro.message),
   });
   const { data: fazendaList = [], isLoading } = trpc.fazendas.list.useQuery();
+  const { data: pastos, isLoading: pastosCarregando } = trpc.pastos.list.useQuery();
+  const subdivisoesPorFazenda = useMemo(() => {
+    const mapa = new Map<number, number>();
+    for (const pasto of pastos ?? []) {
+      mapa.set(pasto.fazendaId, (mapa.get(pasto.fazendaId) ?? 0) + 1);
+    }
+    return mapa;
+  }, [pastos]);
+  const textoSubdivisoes = (fazendaId: number) => (
+    pastosCarregando || pastos == null
+      ? quantidadeSubdivisoes(null)
+      : quantidadeSubdivisoes(subdivisoesPorFazenda.get(fazendaId) ?? 0)
+  );
   const fazendasVisiveis = useMemo(
     () => ordenarFazendasPorNome(
       fazendaList.filter((fazenda) => fazendaCombinaBusca(fazenda, busca)),
@@ -496,7 +511,15 @@ export function FarmsListPage() {
           <div key={f.id} className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0 flex-1" style={info}>
-                <p className="text-gray-700">{f.nome}</p>
+                <p>
+                  <button
+                    type="button"
+                    onClick={() => setLocation(caminhoFichaFazenda(f.id))}
+                    className="text-left text-[#0E7490] hover:underline"
+                  >
+                    {f.nome}
+                  </button>
+                </p>
                 <p className="text-gray-500 mt-0.5">{municipioUf(f.cidade, f.estado)}</p>
               </div>
               <FarmRowActions fazenda={f} onSituacao={() => alternarSituacao(f)} onExcluir={() => { void abrirExclusao(f); }} />
@@ -504,6 +527,16 @@ export function FarmsListPage() {
             <div className="mt-2 pt-2 border-t border-gray-100 space-y-1" style={info}>
               <p><span className="text-gray-400">Área Total (ha): </span>{areaTotalHa(f.area)}</p>
               <p><span className="text-gray-400">Pastagem (ha): </span>{pastagemHaCadastrada(f.areaPastagem)}</p>
+              <p>
+                <span className="text-gray-400">Subdivisões: </span>
+                <button
+                  type="button"
+                  onClick={() => setLocation(caminhoFichaFazenda(f.id, "subdivisoes"))}
+                  className="text-[#0E7490] hover:underline"
+                >
+                  {textoSubdivisoes(f.id)}
+                </button>
+              </p>
               <p><span className="text-gray-400">Situação: </span><span style={{ color: corSituacaoFazenda(f.situacao) }}>{rotuloSituacaoFazenda(f.situacao)}</span></p>
             </div>
           </div>
@@ -512,14 +545,15 @@ export function FarmsListPage() {
 
       {/* Tabela desktop */}
       <div className="hidden lg:block bg-white rounded shadow-sm border border-gray-100 overflow-x-auto">
-        <table className="w-full min-w-[760px]">
+        <table className="w-full min-w-[860px]">
           <colgroup>
-            <col style={{ width: "26%" }} />
-            <col style={{ width: "20%" }} />
-            <col style={{ width: "16%" }} />
+            <col style={{ width: "22%" }} />
+            <col style={{ width: "18%" }} />
             <col style={{ width: "14%" }} />
+            <col style={{ width: "13%" }} />
             <col style={{ width: "12%" }} />
-            <col style={{ width: "12%" }} />
+            <col style={{ width: "11%" }} />
+            <col style={{ width: "10%" }} />
           </colgroup>
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
@@ -557,15 +591,32 @@ export function FarmsListPage() {
             </tr>
           </thead>
           <tbody>
-            {isLoading && <tr><td colSpan={6} className="px-3 py-4 text-center text-gray-400" style={info}>Carregando...</td></tr>}
-            {listaVazia && <tr><td colSpan={6} className="px-3 py-6 text-center text-gray-400" style={info}>Nenhuma fazenda cadastrada.</td></tr>}
-            {buscaSemResultado && <tr><td colSpan={6} className="px-3 py-6 text-center text-gray-400" style={info}>Nenhuma fazenda encontrada.</td></tr>}
+            {isLoading && <tr><td colSpan={COLUNAS_LISTA_FAZENDAS.length} className="px-3 py-4 text-center text-gray-400" style={info}>Carregando...</td></tr>}
+            {listaVazia && <tr><td colSpan={COLUNAS_LISTA_FAZENDAS.length} className="px-3 py-6 text-center text-gray-400" style={info}>Nenhuma fazenda cadastrada.</td></tr>}
+            {buscaSemResultado && <tr><td colSpan={COLUNAS_LISTA_FAZENDAS.length} className="px-3 py-6 text-center text-gray-400" style={info}>Nenhuma fazenda encontrada.</td></tr>}
             {fazendasVisiveis.map((f: any) => (
               <tr key={f.id} className="border-t border-gray-50 hover:bg-gray-50/50">
-                <td className="px-3 py-2 text-gray-700" style={info}>{f.nome}</td>
+                <td className="px-3 py-2" style={info}>
+                  <button
+                    type="button"
+                    onClick={() => setLocation(caminhoFichaFazenda(f.id))}
+                    className="text-left text-[#0E7490] hover:underline"
+                  >
+                    {f.nome}
+                  </button>
+                </td>
                 <td className="px-3 py-2 text-gray-700" style={info}>{municipioUf(f.cidade, f.estado)}</td>
                 <td className="px-3 py-2 text-right text-gray-700 tabular-nums" style={info}>{areaTotalHa(f.area)}</td>
                 <td className="px-3 py-2 text-right text-gray-700 tabular-nums" style={info}>{pastagemHaCadastrada(f.areaPastagem)}</td>
+                <td className="px-3 py-2 text-right tabular-nums" style={info}>
+                  <button
+                    type="button"
+                    onClick={() => setLocation(caminhoFichaFazenda(f.id, "subdivisoes"))}
+                    className="text-[#0E7490] hover:underline"
+                  >
+                    {textoSubdivisoes(f.id)}
+                  </button>
+                </td>
                 <td className="px-3 py-2 text-center" style={{ ...info, color: corSituacaoFazenda(f.situacao) }}>{rotuloSituacaoFazenda(f.situacao)}</td>
                 <td className="px-3 py-2">
                   <div className="flex items-center justify-center">

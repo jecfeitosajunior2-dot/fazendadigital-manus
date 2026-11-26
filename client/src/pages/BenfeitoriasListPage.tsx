@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
@@ -188,14 +188,15 @@ function renderBenfeitoriaCell(b: BenfeitoriaRow, colKey: string) {
   }
 }
 
-export default function BenfeitoriasListPage() {
+export default function BenfeitoriasListPage({ fazendaFixa }: { fazendaFixa?: number } = {}) {
+  const embutida = fazendaFixa != null;
   const [, setLocation] = useLocation();
   const confirm = useConfirm();
-  const urlParams = new URLSearchParams(window.location.search);
-  const fazendaInicial = urlParams.get("fazendaId") || "";
+  const urlParams = new URLSearchParams(typeof window === "undefined" ? "" : window.location.search);
+  const fazendaInicial = embutida ? String(fazendaFixa) : (urlParams.get("fazendaId") || "");
 
   const [fazendaFilter, setFazendaFilter] = useState(fazendaInicial);
-  const [fazendaInitDone, setFazendaInitDone] = useState(false);
+  const [fazendaInitDone, setFazendaInitDone] = useState(embutida);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [importarOpen, setImportarOpen] = useState(false);
@@ -270,7 +271,7 @@ export default function BenfeitoriasListPage() {
   // Mesmo padrão das outras listas operacionais: 1 fazenda → pré-seleciona;
   // várias + sem preferência → empty state (não força a primeira).
   useEffect(() => {
-    if (fazendaInitDone || fazendasData === undefined) return;
+    if (embutida || fazendaInitDone || fazendasData === undefined) return;
 
     if (!fazendasData.length) {
       setFazendaInitDone(true);
@@ -393,12 +394,14 @@ export default function BenfeitoriasListPage() {
   const semFazendaHint = "Selecione uma fazenda para continuar";
 
   return (
-    <AppLayout>
+    <Moldura embutida={embutida}>
       <div className="bg-white rounded border border-gray-200 shadow-sm">
         <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-[20px] font-semibold text-gray-900 shrink-0" style={{ fontFamily: "Fraunces, serif" }}>
-            Lista de Benfeitorias
-          </h1>
+          {embutida ? <h2 className="text-[16px] font-semibold text-gray-900" style={{ fontFamily: "Inter, sans-serif" }}>Benfeitorias da fazenda</h2> : (
+            <h1 className="text-[20px] font-semibold text-gray-900 shrink-0" style={{ fontFamily: "Fraunces, serif" }}>
+              Lista de Benfeitorias
+            </h1>
+          )}
           <div className="flex flex-wrap items-center gap-2 ml-auto">
             <button
               type="button"
@@ -414,7 +417,7 @@ export default function BenfeitoriasListPage() {
               style={{ backgroundColor: FD_PRIMARY }}
             >
               <span className="material-icons text-[16px]">add</span>
-              <span className="hidden sm:inline">Cadastrar Benfeitoria</span>
+              <span className="hidden sm:inline">{embutida ? "Nova Benfeitoria" : "Cadastrar Benfeitoria"}</span>
               <span className="sm:hidden">Cadastrar</span>
             </button>
             <button
@@ -465,14 +468,18 @@ export default function BenfeitoriasListPage() {
         {fazendas.length > 0 && (
           <div className="px-4 py-3 border-b border-gray-50 flex flex-wrap items-center gap-2">
             <div className="flex items-center gap-1.5 shrink-0">
-              <span className="text-[12px] text-gray-600 whitespace-nowrap">Exibindo:</span>
-              <FazendaOverviewSelect
-                value={fazendaFilter}
-                onChange={handleFazendaChange}
-                fazendas={fazendas}
-                showEmptyOption={fazendas.length > 1}
-                className={cn(listControlClass, "min-w-[160px] h-9 py-0")}
-              />
+              {!embutida && (
+                <>
+                  <span className="text-[12px] text-gray-600 whitespace-nowrap">Exibindo:</span>
+                  <FazendaOverviewSelect
+                    value={fazendaFilter}
+                    onChange={handleFazendaChange}
+                    fazendas={fazendas}
+                    showEmptyOption={fazendas.length > 1}
+                    className={cn(listControlClass, "min-w-[160px] h-9 py-0")}
+                  />
+                </>
+              )}
             </div>
 
             <div className="w-[180px] shrink-0">
@@ -661,6 +668,11 @@ export default function BenfeitoriasListPage() {
         onClose={() => setImportarOpen(false)}
         onImportado={() => refetch()}
       />
-    </AppLayout>
+    </Moldura>
   );
+}
+
+function Moldura({ embutida, children }: { embutida: boolean; children: ReactNode }) {
+  if (embutida) return <>{children}</>;
+  return <AppLayout>{children}</AppLayout>;
 }
