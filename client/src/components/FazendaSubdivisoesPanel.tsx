@@ -9,22 +9,16 @@ import {
   areaPlaceholderParaTipo,
   convertAreaInputToHectares,
   formatHectaresForStorage,
-  incluirAreaAvisoFormulario,
   incluirAreaPadraoParaTipo,
-  mensagemConfirmarIncluirAreaTotal,
-  tipoCostumaFicarForaAreaTotal,
-  tooltipIncluirAreaTotal,
-  type AreaInputUnidade,
 } from "@/lib/subdivisao-area";
 import { SelectItem } from "@/components/ui/select";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { FormLabel, FormInput, FormSelect } from "@/components/FormFields";
 import { ImportarCoordenadasModal } from "@/components/ImportarCoordenadasModal";
 import { FazendaSubdivisaoMapaModal } from "@/components/FazendaSubdivisaoMapaModal";
 import { useConfirm } from "@/components/ConfirmDialog";
 import TableHorizontalScroll from "@/components/TableHorizontalScroll";
 import { ordenarFazendasPorNome } from "@/lib/fazendasListagem";
+import { exportListPdf } from "@/lib/exportList";
 import { DeleteActionIcon, EditActionIcon } from "@/components/icons/FarmActionIcons";
 import SemCoordenadasIcon from "@/components/icons/SemCoordenadasIcon";
 import { Map } from "lucide-react";
@@ -57,7 +51,7 @@ function SubCard({
   return (
     <section className={cn("bg-white border border-gray-200 rounded shadow-sm overflow-hidden", className)}>
       <div className="px-5 py-4 border-b border-gray-100">
-        <h3 className="text-[13px] font-semibold text-[#4ECDC4]">{title}</h3>
+        <h3 className="font-semibold text-[#4ECDC4]" style={{ fontFamily: "Inter, sans-serif", fontSize: "16px", fontWeight: 600 }}>{title}</h3>
       </div>
       <div className="p-5">{children}</div>
     </section>
@@ -86,14 +80,13 @@ function coletarErrosSubdivisao(form: {
   tipo: string;
   nome: string;
   area: string;
-  areaUnidade: AreaInputUnidade;
 }): Partial<Record<CampoObrigatorioSub, string>> {
   const erros: Partial<Record<CampoObrigatorioSub, string>> = {};
   if (!form.tipo.trim()) erros.tipo = "Selecione o tipo de divisão.";
   if (!form.nome.trim()) erros.nome = "Informe o nome da subdivisão.";
 
   const areaObrigatoria = areaObrigatoriaParaTipo(form.tipo);
-  const areaHa = convertAreaInputToHectares(form.area, form.areaUnidade);
+  const areaHa = convertAreaInputToHectares(form.area, "ha");
   if (form.area.trim() && areaHa === null) {
     erros.area = "Informe uma área válida.";
   } else if (areaObrigatoria && areaHa === null) {
@@ -136,9 +129,7 @@ const STATUS_OPERACIONAL = [
 const emptyForm = () => ({
   tipo: "Invernada",
   nome: "",
-  sigla: "",
   area: "",
-  areaUnidade: "ha" as AreaInputUnidade,
   capacidade: "",
   tipoPastagem: "",
   status: "ativo",
@@ -192,6 +183,23 @@ const infoLista = { fontFamily: fonteLista, fontSize: "14px", fontWeight: 400 };
 function textoTipoDivisao(tipo?: string | null) {
   const texto = String(tipo ?? "").trim();
   return texto || "—";
+}
+
+function textoPesquisa(valor?: string | null) {
+  return String(valor ?? "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "");
+}
+
+function subdivisaoCombinaBusca(
+  subdivisao: { nome?: string | null; tipo?: string | null },
+  busca: string,
+) {
+  const termo = textoPesquisa(busca);
+  if (!termo) return true;
+  return [subdivisao.nome, textoTipoDivisao(subdivisao.tipo)].some(valor => textoPesquisa(valor).includes(termo));
 }
 
 function SubdivisaoAcoes({
@@ -267,16 +275,31 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
     nome: string;
   } | null>(null);
   const [nomeCrescente, setNomeCrescente] = useState(true);
+  const [busca, setBusca] = useState("");
 
   const { data: subdivisoes = [], isLoading } = trpc.pastos.listByFazenda.useQuery(
     { fazendaId },
     { enabled: fazendaId > 0 }
   );
 
-  const subdivisoesOrdenadas = useMemo(
-    () => ordenarFazendasPorNome(subdivisoes, nomeCrescente),
-    [subdivisoes, nomeCrescente],
-  );
+  const subdivisoesOrdenadas = useMemo(() => {
+    const filtradas = subdivisoes.filter(s => subdivisaoCombinaBusca(s, busca));
+    return ordenarFazendasPorNome(filtradas, nomeCrescente);
+  }, [subdivisoes, busca, nomeCrescente]);
+
+  const baixarPdf = () => {
+    const linhas = subdivisoesOrdenadas.map(s => [
+      s.nome,
+      textoTipoDivisao(s.tipo),
+      formatArea(s.area, fazenda?.unidadeArea),
+      statusOperacionalLabel(s.status),
+    ]);
+    void exportListPdf(`Subdivisões - ${fazenda?.nome ?? "Fazenda"}`, ["Nome", "Tipo", "Área", "Situação"], linhas, {
+      fazendaNome: fazenda?.nome,
+      columnAligns: ["left", "left", "right", "center"],
+      showRegistrosSubtitle: false,
+    });
+  };
   const invalidate = () => {
     utils.pastos.listByFazenda.invalidate({ fazendaId });
     utils.pastos.list.invalidate();
@@ -352,7 +375,7 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
     if (primeiro) {
       setErrosObrigatorios(erros);
       const toastMsg =
-        primeiro === "area" && form.area.trim() && !convertAreaInputToHectares(form.area, form.areaUnidade)
+        primeiro === "area" && form.area.trim() && !convertAreaInputToHectares(form.area, "ha")
           ? "Informe uma área válida."
           : MSG_TOAST[primeiro];
       toast.error(toastMsg, { id: TOAST_ID_OBRIGATORIOS });
@@ -361,29 +384,13 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
     }
 
     setErrosObrigatorios({});
-    const areaHa = convertAreaInputToHectares(form.area, form.areaUnidade);
-
-    let incluirArea = form.incluirArea;
-    if (incluirArea && tipoCostumaFicarForaAreaTotal(form.tipo)) {
-      const decisao = await confirm({
-        title: "Incluir no total da fazenda?",
-        description: mensagemConfirmarIncluirAreaTotal(form.tipo, form.nome.trim(), areaHa),
-        confirmText: "Sim, contar",
-        cancelText: "Não contar",
-        variant: "default",
-        abortOnDismiss: true,
-      });
-      if (decisao === null) return;
-      incluirArea = decisao;
-    }
-
+    const areaHa = convertAreaInputToHectares(form.area, "ha");
     const payload = {
       nome: form.nome.trim(),
-      sigla: form.sigla.trim() || undefined,
       tipo: form.tipo,
       tipoPastagem: form.tipoPastagem || undefined,
       area: areaHa !== null ? formatHectaresForStorage(areaHa) : undefined,
-      incluirArea,
+      incluirArea: form.incluirArea,
       capacidade: form.capacidade ? parseInt(form.capacidade, 10) : undefined,
       status: form.status as "ativo" | "descanso" | "vazio" | "reforma" | "interditado" | "reserva" | "sem_uso",
     };
@@ -398,7 +405,7 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
     setForm(f => ({
       ...f,
       tipo,
-      incluirArea: incluirAreaPadraoParaTipo(tipo),
+      incluirArea: editId ? f.incluirArea : incluirAreaPadraoParaTipo(tipo),
     }));
     limparErroCampo("tipo");
     // Área pode deixar de ser obrigatória ao trocar o tipo
@@ -407,7 +414,6 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
 
   const areaObrigatoria = areaObrigatoriaParaTipo(form.tipo);
   const areaDica = areaDicaParaTipo(form.tipo);
-  const incluirAreaAviso = form.incluirArea ? incluirAreaAvisoFormulario(form.tipo) : null;
 
   const startEdit = (s: typeof subdivisoes[0]) => {
     setEditId(s.id);
@@ -415,9 +421,7 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
     setForm({
       tipo: s.tipo || "Pasto",
       nome: s.nome,
-      sigla: s.sigla || "",
       area: s.area ? String(s.area) : "",
-      areaUnidade: "ha",
       capacidade: s.capacidade ? String(s.capacidade) : "",
       tipoPastagem: s.tipoPastagem || "",
       status: s.status === "vazio" ? "sem_uso" : s.status || "ativo",
@@ -439,22 +443,46 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
   }
 
   return (
-    <div id="fazenda-subdivisoes" className="mt-6 bg-white border border-gray-200 rounded shadow-sm overflow-hidden">
-      <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center justify-end gap-3">
-        <div className="flex flex-wrap items-center gap-2 shrink-0">
+    <div id="fazenda-subdivisoes" className="mt-6">
+    <div className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden">
+      <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
+        <button
+          type="button"
+          onClick={baixarPdf}
+          title="Baixar PDF"
+          aria-label="Baixar PDF"
+          className="inline-flex h-10 w-10 items-center justify-center rounded hover:bg-gray-100 active:scale-[0.97] shrink-0"
+        >
+          <span className="material-icons text-[22px] leading-none" style={{ color: "#E53935" }} aria-hidden>
+            picture_as_pdf
+          </span>
+        </button>
+        <div className="flex flex-wrap items-center gap-3 shrink-0">
+          <label className="relative block">
+            <span className="material-icons pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[18px] text-gray-400">search</span>
+            <input
+              value={busca}
+              onChange={evento => setBusca(evento.target.value)}
+              placeholder="Buscar subdivisão"
+              aria-label="Buscar subdivisão"
+              className="min-h-[44px] w-56 rounded border border-gray-200 bg-white pl-10 pr-3 text-gray-700 outline-none focus:border-[#4ECDC4]"
+              style={infoLista}
+            />
+          </label>
           <button
             type="button"
             onClick={toggleNovaSubdivisaoForm}
-            className="inline-flex items-center gap-1.5 px-4 rounded-lg text-white text-[12px] font-semibold hover:brightness-95 active:scale-[0.97] transition shrink-0 min-h-[44px]"
-            style={{ backgroundColor: FD_PRIMARY }}
+            className="flex items-center justify-center gap-1 px-3 py-1.5 min-h-[44px] rounded text-white text-[11px] font-medium uppercase"
+            style={{ backgroundColor: FD_PRIMARY, fontFamily: "'Inter', sans-serif", fontSize: "14px", fontWeight: 600 }}
           >
-            <span className="material-icons text-[16px]">add</span>
+            <span className="material-icons text-[14px]">add</span>
             Nova Subdivisão
           </button>
           <button
             type="button"
             onClick={() => setImportarCoordenadasOpen(true)}
-            className="inline-flex items-center gap-1.5 px-4 rounded-lg border border-gray-200 bg-white text-gray-700 text-[12px] font-semibold hover:bg-gray-50 active:scale-[0.97] transition shrink-0 min-h-[44px]"
+            className="inline-flex items-center gap-1.5 px-4 rounded-lg border border-gray-200 bg-white text-gray-800 hover:bg-gray-50 active:scale-[0.97] transition shrink-0 min-h-[44px]"
+            style={{ fontFamily: "'Inter', sans-serif", fontSize: "14px", fontWeight: 600 }}
           >
             <span className="material-icons text-[16px] text-gray-500">upload_file</span>
             Importar Coordenadas
@@ -464,13 +492,37 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
 
       {/* Formulário inline — espelho iRancho */}
       {showForm && (
-        <div className="px-4 py-4 space-y-5 bg-gray-50/70">
-          <p className="text-[13px] font-semibold text-[#4ECDC4]">
-            {editId ? "Editar Subdivisão" : "Nova Subdivisão"}
-          </p>
+        <div className="subdivisao-formulario px-4 py-4 space-y-5 bg-gray-50/70">
+          <style>{`
+            .subdivisao-formulario, .subdivisao-formulario label, .subdivisao-formulario input,
+            .subdivisao-formulario textarea, .subdivisao-formulario h2, .subdivisao-formulario h3,
+            .subdivisao-formulario [data-slot="select-trigger"],
+            .subdivisao-formulario [data-slot="select-trigger"] span {
+              font-family: Inter, sans-serif;
+            }
+            .subdivisao-formulario label { font-size: 13px; font-weight: 500; }
+            .subdivisao-formulario input,
+            .subdivisao-formulario textarea,
+            .subdivisao-formulario [data-slot="select-trigger"],
+            .subdivisao-formulario [data-slot="select-trigger"] span {
+              font-size: 14px;
+              font-weight: 400;
+            }
+            .subdivisao-formulario .subdivisao-acao { font-size: 14px; font-weight: 600; }
+            .subdivisao-formulario .material-icons { font-family: "Material Icons"; }
+          `}</style>
+          {editId ? (
+            <div className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden">
+              <div className="px-5 py-4">
+                <h2 className="text-gray-900" style={{ fontFamily: "Inter, sans-serif", fontSize: "24px", fontWeight: 600 }}>
+                  Editar Subdivisão
+                </h2>
+              </div>
+            </div>
+          ) : null}
 
           <SubCard title="Identificação">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 items-start">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
               <div className="scroll-mt-24">
                 <FormLabel required>Tipo de Divisão</FormLabel>
                 <FormSelect variant="light"
@@ -504,62 +556,33 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
                 />
                 <FieldErrorMsg id="subdivisao-err-nome" message={errosObrigatorios.nome} />
               </div>
-              <div>
-                <FormLabel>Sigla da Subdivisão</FormLabel>
-                <FormInput variant="light"
-                  value={form.sigla}
-                  onChange={v => setForm(f => ({ ...f, sigla: v }))}
-                  placeholder="Ex. SSB"
-                />
-              </div>
             </div>
           </SubCard>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
             <SubCard title="Área e Capacidade" className="h-full">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
                 <div className="sm:col-span-2 lg:col-span-1 scroll-mt-24">
                   <FormLabel required={areaObrigatoria}>
-                    Área
+                    Área (ha)
                   </FormLabel>
-                  <div className="flex gap-1.5">
-                    <div className="min-w-0 flex-1">
-                      <FormInput variant="light"
-                        id={fieldDomId("area")}
-                        required={areaObrigatoria}
-                        type="text"
-                        inputMode="decimal"
-                        value={form.area}
-                        onChange={v => {
-                          setForm(f => ({ ...f, area: v }));
-                          limparErroCampo("area");
-                        }}
-                        placeholder={areaPlaceholderParaTipo(form.tipo, form.areaUnidade)}
-                        invalid={!!errosObrigatorios.area}
-                        aria-describedby={errosObrigatorios.area ? "subdivisao-err-area" : undefined}
-                      />
-                    </div>
-                    <div className="w-[72px] shrink-0">
-                      <FormSelect
-                        variant="light"
-                        value={form.areaUnidade}
-                        onChange={v => {
-                          setForm(f => ({ ...f, areaUnidade: v as AreaInputUnidade }));
-                          limparErroCampo("area");
-                        }}
-                        placeholder="ha"
-                        displayValue={form.areaUnidade === "m2" ? "m²" : "ha"}
-                        invalid={!!errosObrigatorios.area}
-                        triggerClassName="px-2"
-                      >
-                        <SelectItem value="ha" className="text-[12px]">ha</SelectItem>
-                        <SelectItem value="m2" className="text-[12px]">m²</SelectItem>
-                      </FormSelect>
-                    </div>
-                  </div>
+                  <FormInput variant="light"
+                    id={fieldDomId("area")}
+                    required={areaObrigatoria}
+                    type="text"
+                    inputMode="decimal"
+                    value={form.area}
+                    onChange={v => {
+                      setForm(f => ({ ...f, area: v }));
+                      limparErroCampo("area");
+                    }}
+                    placeholder={areaPlaceholderParaTipo(form.tipo, "ha")}
+                    invalid={!!errosObrigatorios.area}
+                    aria-describedby={errosObrigatorios.area ? "subdivisao-err-area" : undefined}
+                  />
                   <FieldErrorMsg id="subdivisao-err-area" message={errosObrigatorios.area} />
                   {areaDica && !errosObrigatorios.area && (
-                    <p className="mt-1 text-[10px] leading-relaxed text-gray-500">{areaDica}</p>
+                    <p className="mt-1 text-[11px] leading-relaxed text-gray-500">{areaDica}</p>
                   )}
                 </div>
                 <div>
@@ -572,33 +595,10 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
                   />
                 </div>
               </div>
-              <div className="mt-3 pt-3 border-t border-gray-100">
-                <label className="flex items-start gap-2 cursor-pointer">
-                  <Checkbox
-                    checked={form.incluirArea}
-                    onCheckedChange={v => setForm(f => ({ ...f, incluirArea: !!v }))}
-                    className="mt-0.5 data-[state=checked]:bg-[#4ECDC4] data-[state=checked]:border-[#4ECDC4]"
-                  />
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span className="text-[10px] text-gray-600 flex items-center gap-1.5 cursor-help underline decoration-dotted decoration-gray-300 underline-offset-2">
-                        <SemCoordenadasIcon size={17} />
-                        Contar esta área no total da fazenda
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" sideOffset={6} className="max-w-[268px] text-[11px] leading-relaxed">
-                      {tooltipIncluirAreaTotal(form.tipo)}
-                    </TooltipContent>
-                  </Tooltip>
-                </label>
-                {incluirAreaAviso && (
-                  <p className="mt-1.5 ml-6 text-[10px] leading-relaxed text-amber-700/90">{incluirAreaAviso}</p>
-                )}
-              </div>
             </SubCard>
 
-            <SubCard title="Pastagem e Status" className="h-full">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
+            <SubCard title="Pastagem e Situação" className="h-full">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
                 <div>
                   <FormLabel>Tipo de Pastagem</FormLabel>
                   <FormSelect variant="light"
@@ -613,15 +613,15 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
                     ))}
                   </FormSelect>
                   {!pastagemAplicavel(form.tipo) && (
-                    <p className="mt-1 text-[10px] text-gray-400">Não aplicável para este tipo de divisão</p>
+                    <p className="mt-1 text-[11px] text-gray-400">Não aplicável para este tipo de divisão</p>
                   )}
                 </div>
                 <div>
-                  <FormLabel>Status</FormLabel>
+                  <FormLabel>Situação</FormLabel>
                   <FormSelect variant="light"
                     value={form.status}
                     onChange={v => setForm(f => ({ ...f, status: v }))}
-                    placeholder="Status"
+                    placeholder="Situação"
                     side="top"
                   >
                     {STATUS_OPERACIONAL.filter((item, index, arr) => arr.findIndex(i => i.label === item.label) === index).map(s => (
@@ -631,35 +631,6 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
                 </div>
               </div>
             </SubCard>
-          </div>
-
-          <div className="pt-1 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-2">
-            <div className="min-h-[18px]">
-              {tentativaValidacao && (
-                <p className="text-[12px] text-red-600">
-                  Preencha os campos obrigatórios destacados.
-                </p>
-              )}
-            </div>
-            <div className="flex gap-3 justify-end shrink-0">
-              <button
-                type="button"
-                onClick={resetForm}
-                disabled={isBusy}
-                className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-white border border-gray-300 text-gray-800 hover:bg-gray-50 disabled:opacity-50 transition-colors"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleSubmit()}
-                disabled={isBusy}
-                className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide text-gray-800 hover:opacity-90 transition-opacity disabled:opacity-50"
-                style={{ backgroundColor: FD_PRIMARY }}
-              >
-                {isBusy ? "Salvando..." : editId ? "Salvar" : "Cadastrar"}
-              </button>
-            </div>
           </div>
         </div>
       )}
@@ -703,16 +674,17 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
             {isLoading && (
               <tr><td colSpan={5} className="px-3 py-4 text-center text-gray-400" style={infoLista}>Carregando...</td></tr>
             )}
+            {!isLoading && subdivisoes.length > 0 && subdivisoesOrdenadas.length === 0 && (
+              <tr>
+                <td colSpan={5} className="px-3 py-6 text-center text-gray-400" style={infoLista}>
+                  Nenhuma subdivisão encontrada.
+                </td>
+              </tr>
+            )}
             {!isLoading && subdivisoes.length === 0 && !showForm && (
               <tr>
-                <td colSpan={5} className="px-4 py-12 text-center">
-                  <span className="material-icons text-[36px] text-gray-300 block mb-3">grid_view</span>
-                  <p className="text-[12px] font-medium text-gray-600">
-                    Nenhuma subdivisão cadastrada para esta fazenda.
-                  </p>
-                  <p className="mt-2 mx-auto max-w-xl text-[11px] leading-relaxed text-gray-500">
-                    Cadastre os pastos, piquetes, currais, reservas e áreas de manejo para organizar a estrutura física da propriedade.
-                  </p>
+                <td colSpan={5} className="px-3 py-6 text-center text-gray-400" style={infoLista}>
+                  Nenhuma subdivisão cadastrada.
                 </td>
               </tr>
             )}
@@ -750,6 +722,38 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
           </tbody>
         </table>
       </TableHorizontalScroll>
+      )}
+    </div>
+
+      {showForm && (
+        <div className="subdivisao-formulario pt-4 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-2">
+          <div className="min-h-[18px]">
+            {tentativaValidacao && (
+              <p className="text-[12px] text-red-600">
+                Preencha os campos obrigatórios destacados.
+              </p>
+            )}
+          </div>
+          <div className="flex gap-3 justify-end shrink-0">
+            <button
+              type="button"
+              onClick={resetForm}
+              disabled={isBusy}
+              className="subdivisao-acao px-6 py-2 rounded-full uppercase tracking-wide bg-white border border-gray-300 text-gray-800 hover:bg-gray-50 disabled:opacity-50 transition-colors"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleSubmit()}
+              disabled={isBusy}
+              className="subdivisao-acao px-6 py-2 rounded-full uppercase tracking-wide text-gray-800 hover:opacity-90 transition-opacity disabled:opacity-50"
+              style={{ backgroundColor: FD_PRIMARY }}
+            >
+              {isBusy ? "Salvando..." : editId ? "Salvar" : "Cadastrar"}
+            </button>
+          </div>
+        </div>
       )}
 
       <ImportarCoordenadasModal

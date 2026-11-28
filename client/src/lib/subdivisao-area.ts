@@ -66,7 +66,7 @@ export function areaPlaceholderParaTipo(tipo: string, unit: AreaInputUnidade): s
 
 export function areaDicaParaTipo(tipo: string): string | null {
   if (!TIPOS_AREA_OPCIONAL.has(tipo) && !TIPOS_INCLUIR_AREA_PADRAO_FALSE.has(tipo)) return null;
-  return "Área opcional. Curral pequeno? Use m² (ex.: 500) ou ha (ex.: 0,05).";
+  return "Área opcional. Para um curral pequeno, informe em hectare. Ex.: 0,05.";
 }
 
 export function tipoCostumaFicarForaAreaTotal(tipo: string): boolean {

@@ -228,7 +228,7 @@ export const benfeitoriasOperacao = {
     sessao: SessaoBenfeitoria,
     id: number,
     entrada: Partial<BenfeitoriaWriteInput>,
-    imagens: [string | null, string | null, string | null],
+    imagens?: [string | null, string | null, string | null],
   ) {
     return correr(async (tx) => {
       const [atualLinha] = await tx.select().from(benfeitorias).where(eq(benfeitorias.id, id)).for("update").limit(1);

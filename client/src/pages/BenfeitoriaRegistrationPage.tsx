@@ -10,7 +10,6 @@ import {
   FormInput,
   FormNativeSelect,
   FormSelect,
-  FormTextarea,
   FormYearPicker,
 } from "@/components/FormFields";
 import { SelectItem } from "@/components/ui/select";
@@ -18,6 +17,7 @@ import {
   ESTADOS_CONSERVACAO_BENFEITORIA,
   TIPOS_BENFEITORIA,
 } from "@shared/benfeitoria-types";
+import { caminhoFichaFazenda } from "@/lib/fazendasListagem";
 
 const TOAST_ID_OBRIGATORIOS = "benfeitoria-campos-obrigatorios";
 
@@ -90,8 +90,6 @@ type FormState = {
   estado: string;
   anoConstrucao: string;
   valor: string;
-  vidaUtil: string;
-  observacoes: string;
 };
 
 type DirtyFields = Partial<Record<keyof FormState, true>>;
@@ -103,8 +101,6 @@ const emptyForm = (): FormState => ({
   estado: "",
   anoConstrucao: "",
   valor: "",
-  vidaUtil: "",
-  observacoes: "",
 });
 
 function readFileAsBase64(file: File): Promise<string> {
@@ -117,6 +113,26 @@ function readFileAsBase64(file: File): Promise<string> {
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
+}
+
+function BenfeitoriaCard({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden">
+      <div className="px-5 py-4 border-b border-gray-100">
+        <h2 className="font-semibold text-[#4ECDC4]" style={{ fontFamily: "Inter, sans-serif", fontSize: "16px", fontWeight: 600 }}>{title}</h2>
+        {description ? <p className="mt-1 text-[11px] leading-relaxed text-gray-500">{description}</p> : null}
+      </div>
+      <div className="p-5">{children}</div>
+    </section>
+  );
 }
 
 function ImageUploadSlot({
@@ -202,15 +218,17 @@ export default function BenfeitoriaRegistrationPage() {
     { enabled: isEdit, staleTime: 0, refetchOnMount: "always" }
   );
 
+  const voltarParaFicha = searchParams.get("retorno") === "ficha";
   const listUrl = useMemo(() => {
-    if (fazendaIdFromUrl) {
-      return `/fazendas/benfeitorias?fazendaId=${encodeURIComponent(fazendaIdFromUrl)}`;
+    const fazendaId = fazendaIdFromUrl || (isEdit && benfeitoria?.fazendaId ? String(benfeitoria.fazendaId) : "");
+    if (voltarParaFicha && /^\d+$/.test(fazendaId)) {
+      return caminhoFichaFazenda(Number(fazendaId), "benfeitorias");
     }
-    if (isEdit && benfeitoria?.fazendaId) {
-      return `/fazendas/benfeitorias?fazendaId=${benfeitoria.fazendaId}`;
+    if (fazendaId) {
+      return `/fazendas/benfeitorias?fazendaId=${encodeURIComponent(fazendaId)}`;
     }
     return "/fazendas/benfeitorias";
-  }, [fazendaIdFromUrl, isEdit, benfeitoria?.fazendaId]);
+  }, [fazendaIdFromUrl, isEdit, benfeitoria?.fazendaId, voltarParaFicha]);
 
   const [form, setForm] = useState<FormState>(emptyForm);
   const [imageSlots, setImageSlots] = useState<ImageSlot[]>([
@@ -246,8 +264,6 @@ export default function BenfeitoriaRegistrationPage() {
         valor: benfeitoria.valorEstimado
           ? formatCurrencyBrl(String(Math.round(parseFloat(String(benfeitoria.valorEstimado)) * 100)))
           : "",
-        vidaUtil: benfeitoria.vidaUtil ? String(benfeitoria.vidaUtil) : "",
-        observacoes: benfeitoria.observacoes || "",
       });
       setDirtyFields({});
       setImageSlotsDirty(false);
@@ -273,8 +289,6 @@ export default function BenfeitoriaRegistrationPage() {
         : (benfeitoria.valorEstimado
             ? formatCurrencyBrl(String(Math.round(parseFloat(String(benfeitoria.valorEstimado)) * 100)))
             : ""),
-      vidaUtil: dirtyFields.vidaUtil ? f.vidaUtil : (benfeitoria.vidaUtil ? String(benfeitoria.vidaUtil) : ""),
-      observacoes: dirtyFields.observacoes ? f.observacoes : (benfeitoria.observacoes || ""),
     }));
   }, [isEdit, benfeitoria, initialized, fetchingBenfeitoria, dirtyFields]);
 
@@ -385,9 +399,7 @@ export default function BenfeitoriaRegistrationPage() {
       tipo: form.tipo.trim(),
       estado: form.estado.trim(),
       anoConstrucao: parseInt(form.anoConstrucao),
-      vidaUtil: form.vidaUtil.trim() || undefined,
       valorEstimado: parseCurrencyBrl(form.valor) || undefined,
-      observacoes: form.observacoes.trim() || undefined,
       imageSlots: await buildImageSlotsPayload(),
     };
 
@@ -399,9 +411,7 @@ export default function BenfeitoriaRegistrationPage() {
       if (dirtyFields.tipo) updatePayload.tipo = payload.tipo;
       if (dirtyFields.estado) updatePayload.estado = payload.estado;
       if (dirtyFields.anoConstrucao) updatePayload.anoConstrucao = payload.anoConstrucao;
-      if (dirtyFields.vidaUtil) updatePayload.vidaUtil = payload.vidaUtil;
       if (dirtyFields.valor) updatePayload.valorEstimado = payload.valorEstimado;
-      if (dirtyFields.observacoes) updatePayload.observacoes = payload.observacoes;
       if (imageSlotsDirty) updatePayload.imageSlots = payload.imageSlots;
 
       if (Object.keys(updatePayload).length === 1) {
@@ -425,6 +435,25 @@ export default function BenfeitoriaRegistrationPage() {
 
   return (
     <AppLayout>
+      <div className="benfeitoria-formulario">
+      <style>{`
+        .benfeitoria-formulario, .benfeitoria-formulario label, .benfeitoria-formulario input,
+        .benfeitoria-formulario textarea, .benfeitoria-formulario h1, .benfeitoria-formulario h2,
+        .benfeitoria-formulario [data-slot="select-trigger"],
+        .benfeitoria-formulario [data-slot="select-trigger"] span {
+          font-family: Inter, sans-serif;
+        }
+        .benfeitoria-formulario label { font-size: 13px; font-weight: 500; }
+        .benfeitoria-formulario input,
+        .benfeitoria-formulario textarea,
+        .benfeitoria-formulario [data-slot="select-trigger"],
+        .benfeitoria-formulario [data-slot="select-trigger"] span {
+          font-size: 14px;
+          font-weight: 400;
+        }
+        .benfeitoria-formulario .benfeitoria-acao { font-size: 14px; font-weight: 600; }
+        .benfeitoria-formulario .material-icons { font-family: "Material Icons"; }
+      `}</style>
       <button
         type="button"
         onClick={() => setLocation(listUrl)}
@@ -437,30 +466,16 @@ export default function BenfeitoriaRegistrationPage() {
         <span className="text-[13px]">Voltar</span>
       </button>
       <form onSubmit={handleSubmit} noValidate>
-        <div className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden">
-          <div className="px-5 py-4 border-b border-gray-100">
-            <h1 className="text-[20px] font-semibold text-gray-900" style={{ fontFamily: "Fraunces, serif" }}>
-              {isEdit ? "Editar Benfeitoria" : "Cadastro de Benfeitoria"}
+        <div className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden mb-5">
+          <div className="px-5 py-4">
+            <h1 className="text-gray-900" style={{ fontFamily: "Inter, sans-serif", fontSize: "24px", fontWeight: 600 }}>
+              {isEdit ? "Editar Benfeitoria" : "Cadastrar Benfeitoria"}
             </h1>
           </div>
+        </div>
 
-          <div className="p-5 space-y-5">
-            <div>
-              <p className="text-[11px] text-gray-600 mb-3">
-                Selecione até três fotos para sua Benfeitoria
-              </p>
-              <div className="flex gap-3">
-                {imageSlots.map((slot, i) => (
-                  <ImageUploadSlot
-                    key={i}
-                    slot={slot}
-                    onSelect={file => setImageAt(i, file)}
-                    onRemove={() => removeImageAt(i)}
-                  />
-                ))}
-              </div>
-            </div>
-
+        <div className="space-y-5">
+          <BenfeitoriaCard title="Identificação">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div
                 className={cn(
@@ -516,7 +531,7 @@ export default function BenfeitoriaRegistrationPage() {
               )}
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
               <div className="scroll-mt-24">
                 <FormLabel required>Tipo de Benfeitoria</FormLabel>
                 <FormSelect
@@ -531,7 +546,7 @@ export default function BenfeitoriaRegistrationPage() {
                   aria-describedby={errosObrigatorios.tipo ? "benfeitoria-err-tipo" : undefined}
                 >
                   {TIPOS_BENFEITORIA.map(tipo => (
-                    <SelectItem key={tipo} value={tipo} className="text-[12px]">
+                    <SelectItem key={tipo} value={tipo} className="text-[13px]">
                       {tipo}
                     </SelectItem>
                   ))}
@@ -552,7 +567,7 @@ export default function BenfeitoriaRegistrationPage() {
                   aria-describedby={errosObrigatorios.estado ? "benfeitoria-err-estado" : undefined}
                 >
                   {ESTADOS_CONSERVACAO_BENFEITORIA.map(estado => (
-                    <SelectItem key={estado} value={estado} className="text-[12px]">
+                    <SelectItem key={estado} value={estado} className="text-[13px]">
                       {estado}
                     </SelectItem>
                   ))}
@@ -560,8 +575,10 @@ export default function BenfeitoriaRegistrationPage() {
                 <FieldErrorMsg id="benfeitoria-err-estado" message={errosObrigatorios.estado} />
               </div>
             </div>
+          </BenfeitoriaCard>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <BenfeitoriaCard title="Construção e valor">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="scroll-mt-24">
                 <FormLabel required>Ano de Construção</FormLabel>
                 <FormYearPicker
@@ -582,15 +599,6 @@ export default function BenfeitoriaRegistrationPage() {
                 />
               </div>
               <div>
-                <FormLabel>Vida Útil</FormLabel>
-                <FormInput
-                  variant="light"
-                  value={form.vidaUtil}
-                  onChange={v => set("vidaUtil", v)}
-                  placeholder="Ex: 10 anos"
-                />
-              </div>
-              <div>
                 <FormLabel>Valor</FormLabel>
                 <FormInput
                   variant="light"
@@ -600,47 +608,50 @@ export default function BenfeitoriaRegistrationPage() {
                 />
               </div>
             </div>
+          </BenfeitoriaCard>
 
-            <div>
-              <FormLabel>Observações</FormLabel>
-              <FormTextarea
-                variant="light"
-                value={form.observacoes}
-                onChange={v => set("observacoes", v)}
-                placeholder="Descreva sua benfeitoria"
-                rows={3}
-              />
+          <BenfeitoriaCard title="Fotos" description="Selecione até três fotos para sua benfeitoria.">
+            <div className="flex gap-3">
+              {imageSlots.map((slot, i) => (
+                <ImageUploadSlot
+                  key={i}
+                  slot={slot}
+                  onSelect={file => setImageAt(i, file)}
+                  onRemove={() => removeImageAt(i)}
+                />
+              ))}
             </div>
+          </BenfeitoriaCard>
+        </div>
 
-            <div className="pt-4 border-t border-gray-100 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3">
-              <div className="min-h-[18px]">
-                {tentativaValidacao && (
-                  <p className="text-[12px] text-red-600">
-                    Preencha os campos obrigatórios destacados.
-                  </p>
-                )}
-              </div>
-              <div className="flex justify-end gap-3 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setLocation(listUrl)}
-                  className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-white border border-gray-300 text-gray-800 hover:bg-gray-50 transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={isBusy}
-                  className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide text-gray-900 disabled:opacity-50 transition-opacity hover:opacity-90"
-                  style={{ backgroundColor: FD_PRIMARY }}
-                >
-                  {isBusy ? "Salvando..." : isEdit ? "Salvar" : "Cadastrar"}
-                </button>
-              </div>
-            </div>
+        <div className="pt-4 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="min-h-[18px]">
+            {tentativaValidacao && (
+              <p className="text-[12px] text-red-600">
+                Preencha os campos obrigatórios destacados.
+              </p>
+            )}
+          </div>
+          <div className="flex justify-end gap-3 shrink-0">
+            <button
+              type="button"
+              onClick={() => setLocation(listUrl)}
+              className="benfeitoria-acao px-6 py-2 rounded-full uppercase tracking-wide bg-white border border-gray-300 text-gray-800 hover:bg-gray-50 transition-colors"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={isBusy}
+              className="benfeitoria-acao px-6 py-2 rounded-full uppercase tracking-wide text-gray-800 hover:opacity-90 transition-opacity disabled:opacity-50"
+              style={{ backgroundColor: FD_PRIMARY }}
+            >
+              {isBusy ? "Salvando..." : isEdit ? "Salvar" : "Cadastrar"}
+            </button>
           </div>
         </div>
       </form>
+      </div>
     </AppLayout>
   );
 }

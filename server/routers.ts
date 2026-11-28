@@ -6948,12 +6948,12 @@ const benfeitoriasRouter = router({
     .input(z.object({ id: z.number(), ...benfeitoriasUpdateInputFields }))
     .mutation(async ({ ctx, input }) => {
       const { id, dataInstalacao, imageSlots, percentualAtividade, ...rest } = input;
-      const [img1, img2, img3] = await resolveImageSlots(imageSlots);
+      const imagens = imageSlots === undefined ? undefined : await resolveImageSlots(imageSlots);
       return benfeitoriasOperacao.atualizar(
         sessaoBenfeitoria(ctx),
         id,
         { ...rest, dataInstalacao, percentualAtividade },
-        [img1, img2, img3],
+        imagens,
       );
     }),
 

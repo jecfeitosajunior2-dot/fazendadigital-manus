@@ -1,4 +1,4 @@
-import React, { useRef, useState, useCallback } from 'react';
+import { useRef, useState, useCallback } from 'react';
 import { trpc } from '@/lib/trpc';
 import { toast } from 'sonner';
 import { isArquivoCoordenadasValido, readKmlFromFile } from '@/lib/readKmlFile';
@@ -22,13 +22,19 @@ import { cn } from '@/lib/utils';
 
 const FD_PRIMARY = '#4ECDC4';
 
+const letraInter = { fontFamily: "Inter, sans-serif" } as const;
+const letraTitulo = { ...letraInter, fontSize: "24px", fontWeight: 600 } as const;
+const letraSecao = { ...letraInter, fontSize: "16px", fontWeight: 600 } as const;
+const letraCorpo = { ...letraInter, fontSize: "14px", fontWeight: 400 } as const;
+const letraRotulo = { ...letraInter, fontSize: "13px", fontWeight: 500 } as const;
+const letraNumero = { ...letraInter, fontSize: "24px", fontWeight: 600 } as const;
+const btnLetra = { ...letraInter, fontSize: "14px", fontWeight: 600 } as const;
+
 const btnPrimary =
-  'inline-flex items-center justify-center gap-1.5 px-4 rounded-lg text-[12px] font-semibold text-white hover:brightness-95 disabled:opacity-50 disabled:cursor-not-allowed transition min-h-[40px]';
+  'inline-flex items-center justify-center gap-1.5 px-6 py-2 rounded-full uppercase tracking-wide text-gray-800 hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition';
 
 const btnSecondary =
-  'inline-flex items-center justify-center gap-1.5 px-4 rounded-lg text-[12px] font-semibold border border-gray-200 bg-[#EEEEEE] text-gray-700 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition min-h-[40px]';
-
-const stepCard = 'border border-gray-200 rounded shadow-sm bg-white p-4';
+  'inline-flex items-center justify-center gap-1.5 px-6 py-2 rounded-full uppercase tracking-wide bg-white border border-gray-300 text-gray-800 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition';
 
 const metricCard = 'border border-gray-200 rounded shadow-sm bg-white p-3 text-center';
 
@@ -116,42 +122,14 @@ export function ImportarCoordenadasModal({ open, onClose, fazendaId, onImportado
 
   const renderUpload = () => (
     <div className="space-y-4">
-      <div className={stepCard}>
-        <div className="flex items-start gap-3">
-          <div
-            className="w-7 h-7 rounded-full flex items-center justify-center text-[12px] font-bold shrink-0 text-white"
-            style={{ backgroundColor: FD_PRIMARY }}
-          >
-            1
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-[13px] font-semibold text-[#4ECDC4] mb-1">Antes de importar</p>
-            <ul className="text-[11px] text-gray-500 space-y-1 leading-relaxed list-disc pl-4">
-              <li>Cadastre as subdivisões da fazenda (pastos, piquetes, currais etc.)</li>
-              <li>
-                Os nomes no arquivo devem corresponder ao <strong>nome</strong> ou à{' '}
-                <strong>sigla</strong> cadastrados
-              </li>
-              <li>Se houver nomes duplicados no arquivo, prevalece a última ocorrência</li>
-            </ul>
-          </div>
-        </div>
-      </div>
-
-      <div className={stepCard}>
-        <div className="flex items-start gap-3">
-          <div
-            className="w-7 h-7 rounded-full flex items-center justify-center text-[12px] font-bold shrink-0 text-white"
-            style={{ backgroundColor: FD_PRIMARY }}
-          >
-            2
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-[13px] font-semibold text-[#4ECDC4] mb-1">Envie o arquivo KML ou KMZ</p>
-            <p className="text-[11px] text-gray-500 mb-3">
-              O arquivo deve conter o contorno de cada subdivisão.
-            </p>
-
+      <p
+        className="rounded border border-amber-200 bg-amber-50 px-4 py-3 leading-relaxed text-amber-950"
+        style={letraCorpo}
+      >
+        <span className="font-semibold">Crie os pastos antes de importar.</span> O arquivo não cria pasto
+        novo: ele só desenha o contorno no pasto que já tem o mesmo nome.
+      </p>
+      <div>
             <div
               className={cn(
                 'border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors',
@@ -172,7 +150,7 @@ export function ImportarCoordenadasModal({ open, onClose, fazendaId, onImportado
               {arquivo ? (
                 <div className="flex flex-col items-center gap-2">
                   <FileUp className="w-10 h-10 text-emerald-600" />
-                  <p className="font-semibold text-gray-800 text-[13px]">{arquivo.name}</p>
+                  <p className="text-gray-800" style={{ ...letraCorpo, fontWeight: 600 }}>{arquivo.name}</p>
                   <button
                     type="button"
                     onClick={e => {
@@ -180,7 +158,8 @@ export function ImportarCoordenadasModal({ open, onClose, fazendaId, onImportado
                       setArquivo(null);
                       if (inputRef.current) inputRef.current.value = '';
                     }}
-                    className="text-[11px] text-gray-500 hover:text-red-500 underline mt-1"
+                    className="text-gray-500 hover:text-red-500 underline mt-1"
+                    style={letraRotulo}
                   >
                     Remover arquivo
                   </button>
@@ -188,11 +167,11 @@ export function ImportarCoordenadasModal({ open, onClose, fazendaId, onImportado
               ) : (
                 <div className="flex flex-col items-center gap-2">
                   <Upload className="w-10 h-10 text-gray-400" />
-                  <p className="text-[13px] text-gray-600">
+                  <p className="text-gray-600" style={letraCorpo}>
                     <span className="font-semibold text-[#4ECDC4]">Clique para selecionar</span> ou arraste o
                     arquivo aqui
                   </p>
-                  <p className="text-[11px] text-gray-400">KML ou KMZ</p>
+                  <p className="text-gray-400" style={letraRotulo}>KML ou KMZ</p>
                 </div>
               )}
             </div>
@@ -204,12 +183,10 @@ export function ImportarCoordenadasModal({ open, onClose, fazendaId, onImportado
               className="hidden"
               onChange={e => handleFileChange(e.target.files?.[0] ?? null)}
             />
-          </div>
-        </div>
       </div>
 
       <div className="flex flex-wrap justify-end gap-3 pt-1">
-        <button type="button" onClick={handleClose} className={btnSecondary}>
+        <button type="button" onClick={handleClose} className={btnSecondary} style={btnLetra}>
           Cancelar
         </button>
         <button
@@ -217,7 +194,7 @@ export function ImportarCoordenadasModal({ open, onClose, fazendaId, onImportado
           onClick={handleImportar}
           disabled={!arquivo || importarMutation.isPending}
           className={btnPrimary}
-          style={{ backgroundColor: FD_PRIMARY }}
+          style={{ ...btnLetra, backgroundColor: FD_PRIMARY }}
         >
           {importarMutation.isPending ? (
             <Loader2 className="w-4 h-4 animate-spin" />
@@ -248,8 +225,8 @@ export function ImportarCoordenadasModal({ open, onClose, fazendaId, onImportado
             <AlertTriangle className="w-14 h-14 text-red-500 mb-2" />
           )}
           <h3
-            className="text-[18px] font-semibold text-gray-900 text-center"
-            style={{ fontFamily: 'Fraunces, serif' }}
+            className="text-gray-900 text-center"
+            style={letraSecao}
           >
             {sucesso
               ? 'Importação concluída!'
@@ -258,44 +235,44 @@ export function ImportarCoordenadasModal({ open, onClose, fazendaId, onImportado
                 : 'Nenhuma coordenada importada'}
           </h3>
           {falha && (
-            <p className="text-[11px] text-gray-500 mt-1 text-center max-w-sm">
-              Verifique se as subdivisões estão cadastradas e se os nomes do arquivo correspondem ao
-              nome ou sigla cadastrados.
+            <p className="text-gray-500 mt-1 text-center max-w-sm" style={letraCorpo}>
+              Nenhum nome do arquivo é igual a uma subdivisão desta fazenda. Os nomes encontrados estão na lista abaixo.
             </p>
           )}
         </div>
 
         <div className="grid grid-cols-3 gap-3">
           <div className={metricCard}>
-            <p className="text-2xl font-bold text-gray-800 tabular-nums">{resultado.totalNoArquivo}</p>
-            <p className="text-[11px] text-gray-500 mt-0.5">No arquivo</p>
+            <p className="text-gray-800 tabular-nums" style={letraNumero}>{resultado.totalNoArquivo}</p>
+            <p className="text-gray-500 mt-0.5" style={letraRotulo}>No arquivo</p>
           </div>
           <div className={metricCard}>
-            <p className="text-2xl font-bold text-emerald-700 tabular-nums">{resultado.importados}</p>
-            <p className="text-[11px] text-gray-500 mt-0.5">Atualizadas</p>
+            <p className="text-emerald-700 tabular-nums" style={letraNumero}>{resultado.importados}</p>
+            <p className="text-gray-500 mt-0.5" style={letraRotulo}>Atualizadas</p>
           </div>
           <div className={metricCard}>
             <p
               className={cn(
-                'text-2xl font-bold tabular-nums',
+                'tabular-nums',
                 resultado.ignorados.length > 0 ? 'text-amber-700' : 'text-emerald-700',
               )}
+              style={letraNumero}
             >
               {resultado.ignorados.length}
             </p>
-            <p className="text-[11px] text-gray-500 mt-0.5">Ignorados</p>
+            <p className="text-gray-500 mt-0.5" style={letraRotulo}>Ignorados</p>
           </div>
         </div>
 
         {resultado.ignorados.length > 0 && (
           <div>
-            <p className="text-[13px] font-semibold text-amber-800 mb-2">
-              Nomes sem subdivisão correspondente:
+            <p className="text-amber-800 mb-2" style={letraRotulo}>
+              Nomes que vieram no arquivo
             </p>
             <div className="max-h-40 overflow-y-auto border border-amber-200 rounded-lg divide-y divide-amber-100">
               {resultado.ignorados.map(nome => (
                 <div key={nome} className="px-3 py-2 bg-amber-50/80">
-                  <p className="text-[11px] text-amber-900">{nome}</p>
+                  <p className="text-amber-900" style={letraCorpo}>{nome}</p>
                 </div>
               ))}
             </div>
@@ -312,6 +289,7 @@ export function ImportarCoordenadasModal({ open, onClose, fazendaId, onImportado
               if (inputRef.current) inputRef.current.value = '';
             }}
             className={btnSecondary}
+            style={btnLetra}
           >
             <RotateCcw className="w-4 h-4" />
             Nova importação
@@ -320,7 +298,7 @@ export function ImportarCoordenadasModal({ open, onClose, fazendaId, onImportado
             type="button"
             onClick={handleClose}
             className={cn(btnPrimary, 'flex-1 sm:flex-none')}
-            style={{ backgroundColor: FD_PRIMARY }}
+            style={{ ...btnLetra, backgroundColor: FD_PRIMARY }}
           >
             <MapPin className="w-4 h-4" />
             Fechar
@@ -333,7 +311,7 @@ export function ImportarCoordenadasModal({ open, onClose, fazendaId, onImportado
   const titulos: Record<Etapa, { title: string; desc: string }> = {
     upload: {
       title: 'Importar Coordenadas',
-      desc: 'Envie um arquivo KML ou KMZ com os contornos das subdivisões da fazenda.',
+      desc: '',
     },
     resultado: {
       title: 'Relatório de Importação',
@@ -341,70 +319,24 @@ export function ImportarCoordenadasModal({ open, onClose, fazendaId, onImportado
     },
   };
 
-  const etapas: { id: Etapa; label: string }[] = [
-    { id: 'upload', label: 'Upload' },
-    { id: 'resultado', label: 'Resultado' },
-  ];
-  const etapaIdx = etapas.findIndex(e => e.id === etapa);
-
   return (
     <Dialog open={open} onOpenChange={v => { if (!v) handleClose(); }}>
       <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-hidden flex flex-col gap-0 p-0">
         <DialogHeader className="px-5 py-4 border-b border-gray-100 shrink-0 text-left space-y-1">
           <DialogTitle
-            className="text-[20px] font-semibold text-gray-900"
-            style={{ fontFamily: 'Fraunces, serif' }}
+            className="text-gray-900"
+            style={letraTitulo}
           >
             {titulos[etapa].title}
           </DialogTitle>
-          <DialogDescription className="text-[11px] text-gray-500">
-            {titulos[etapa].desc}
-          </DialogDescription>
+          {titulos[etapa].desc ? (
+            <DialogDescription className="text-gray-500" style={letraCorpo}>
+              {titulos[etapa].desc}
+            </DialogDescription>
+          ) : null}
         </DialogHeader>
 
         <div className="px-5 py-4 overflow-y-auto flex-1 min-h-0">
-          <div className="flex items-center gap-0 mb-4">
-            {etapas.map((e, idx) => (
-              <React.Fragment key={e.id}>
-                <div className="flex flex-col items-center">
-                  <div
-                    className={cn(
-                      'w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-colors',
-                      idx < etapaIdx
-                        ? 'bg-emerald-500 text-white'
-                        : idx === etapaIdx
-                          ? 'text-white'
-                          : 'bg-gray-200 text-gray-500',
-                    )}
-                    style={idx === etapaIdx ? { backgroundColor: FD_PRIMARY } : undefined}
-                  >
-                    {idx < etapaIdx ? <CheckCircle2 className="w-4 h-4" /> : idx + 1}
-                  </div>
-                  <span
-                    className={cn(
-                      'text-[10px] mt-1 font-medium',
-                      idx === etapaIdx
-                        ? 'text-[#4ECDC4]'
-                        : idx < etapaIdx
-                          ? 'text-emerald-600'
-                          : 'text-gray-400',
-                    )}
-                  >
-                    {e.label}
-                  </span>
-                </div>
-                {idx < etapas.length - 1 && (
-                  <div
-                    className={cn(
-                      'flex-1 h-0.5 mx-2 mb-4 transition-colors',
-                      idx < etapaIdx ? 'bg-emerald-400' : 'bg-gray-200',
-                    )}
-                  />
-                )}
-              </React.Fragment>
-            ))}
-          </div>
-
           {etapa === 'upload' && renderUpload()}
           {etapa === 'resultado' && renderResultado()}
         </div>

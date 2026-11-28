@@ -197,10 +197,19 @@ describe("benfeitorias no MySQL descartável", () => {
     await expect(benfeitoriasOperacao.recusarExclusao(sessao(1), 40)).rejects.toMatchObject({
       code: "PRECONDITION_FAILED", message: MSG_BENFEITORIA_APAGAR,
     });
-    await benfeitoriasOperacao.atualizar(sessao(1), 40, { status: "inativo" }, [null, null, null]);
+    await benfeitoriasOperacao.atualizar(sessao(1), 40, { status: "inativo" });
     const [row] = await pool.query("SELECT status, imagem1, userId FROM benfeitorias WHERE id = 40") as [Array<{ status: string; imagem1: string; userId: number }>, unknown];
     expect(row[0]).toMatchObject({ status: "inativo", imagem1: "/manus-storage/foto-antiga.jpg", userId: 1 });
     await expect(benfeitoriasOperacao.recusarExclusao(sessao(1), 43)).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("remover a foto grava o campo vazio", async () => {
+    await benfeitoriasOperacao.atualizar(sessao(1), 40, { nome: "Curral coberto" }, [null, "/manus-storage/foto-2.jpg", null]);
+    const [meio] = await pool.query("SELECT imagem1, imagem2, imagem3 FROM benfeitorias WHERE id = 40") as [Array<{ imagem1: string | null; imagem2: string | null; imagem3: string | null }>, unknown];
+    expect(meio[0]).toEqual({ imagem1: null, imagem2: "/manus-storage/foto-2.jpg", imagem3: null });
+    await benfeitoriasOperacao.atualizar(sessao(1), 40, {}, [null, null, null]);
+    const [fim] = await pool.query("SELECT imagem1, imagem2, imagem3 FROM benfeitorias WHERE id = 40") as [Array<{ imagem1: string | null; imagem2: string | null; imagem3: string | null }>, unknown];
+    expect(fim[0]).toEqual({ imagem1: null, imagem2: null, imagem3: null });
   });
 
   it("dois cadastros ao mesmo tempo deixam os dois no titular", async () => {

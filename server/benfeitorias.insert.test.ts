@@ -40,7 +40,7 @@ describe("toBenfeitoriaRow — insert benfeitorias", () => {
       valorEstimado: "150000.00",
     };
     const createRow = toBenfeitoriaRow(1, input, [null, null, null]);
-    const updateRow = toBenfeitoriaUpdateRow({ ...input, estado: "Regular" }, [null, null, null]);
+    const updateRow = toBenfeitoriaUpdateRow({ ...input, estado: "Regular" });
 
     expect(createRow.tipo).toBe("Curral");
     expect(createRow.estado).toBe("Bom");
@@ -49,14 +49,23 @@ describe("toBenfeitoriaRow — insert benfeitorias", () => {
   });
 
   it("permite update parcial sem sobrescrever tipo e estado", () => {
-    const updateRow = toBenfeitoriaUpdateRow(
-      { valorEstimado: "120000.00" },
-      [null, null, null],
-    );
+    const updateRow = toBenfeitoriaUpdateRow({ valorEstimado: "120000.00" });
 
     expect(updateRow.valorEstimado).toBe("120000.00");
     expect(updateRow.tipo).toBeUndefined();
     expect(updateRow.estado).toBeUndefined();
+    expect(updateRow.imagem1).toBeUndefined();
+  });
+
+  it("foto removida grava o campo vazio e foto mantida continua", () => {
+    const updateRow = toBenfeitoriaUpdateRow(
+      {},
+      [null, "/manus-storage/foto-2.jpg", null],
+    );
+
+    expect(updateRow.imagem1).toBeNull();
+    expect(updateRow.imagem2).toBe("/manus-storage/foto-2.jpg");
+    expect(updateRow.imagem3).toBeNull();
   });
 
   it("normaliza dataInstalacao para YYYY-MM-DD", () => {

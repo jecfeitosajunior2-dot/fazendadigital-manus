@@ -73,9 +73,8 @@ export function toBenfeitoriaRow(
 
 export function toBenfeitoriaUpdateRow(
   data: Partial<BenfeitoriaWriteInput>,
-  images: [string | null, string | null, string | null],
+  images?: [string | null, string | null, string | null],
 ) {
-  const [imagem1, imagem2, imagem3] = images;
   const row: Record<string, unknown> = {};
 
   if (data.fazendaId != null) row.fazendaId = data.fazendaId;
@@ -111,9 +110,12 @@ export function toBenfeitoriaUpdateRow(
   const observacoes = data.observacoes?.trim();
   if (observacoes) row.observacoes = observacoes;
 
-  if (imagem1) row.imagem1 = imagem1;
-  if (imagem2) row.imagem2 = imagem2;
-  if (imagem3) row.imagem3 = imagem3;
+  if (images) {
+    const [imagem1, imagem2, imagem3] = images;
+    row.imagem1 = imagem1;
+    row.imagem2 = imagem2;
+    row.imagem3 = imagem3;
+  }
 
   return row as any;
 }

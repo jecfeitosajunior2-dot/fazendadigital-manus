@@ -34,11 +34,19 @@ import { cn } from '@/lib/utils';
 
 const FD_PRIMARY = '#4ECDC4';
 
+const letraInter = { fontFamily: "Inter, sans-serif" } as const;
+const letraTitulo = { ...letraInter, fontSize: "24px", fontWeight: 600 } as const;
+const letraSecao = { ...letraInter, fontSize: "16px", fontWeight: 600 } as const;
+const letraCorpo = { ...letraInter, fontSize: "14px", fontWeight: 400 } as const;
+const letraRotulo = { ...letraInter, fontSize: "13px", fontWeight: 500 } as const;
+const letraNumero = { ...letraInter, fontSize: "24px", fontWeight: 600 } as const;
+const btnLetra = { ...letraInter, fontSize: "14px", fontWeight: 600 } as const;
+
 const btnPrimary =
-  'inline-flex items-center justify-center gap-1.5 px-4 rounded-lg text-[12px] font-semibold text-white hover:brightness-95 disabled:opacity-50 disabled:cursor-not-allowed transition min-h-[40px]';
+  'inline-flex items-center justify-center gap-1.5 px-6 py-2 rounded-full uppercase tracking-wide text-gray-800 hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition';
 
 const btnSecondary =
-  'inline-flex items-center justify-center gap-1.5 px-4 rounded-lg text-[12px] font-semibold border border-gray-200 bg-[#EEEEEE] text-gray-700 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition min-h-[40px]';
+  'inline-flex items-center justify-center gap-1.5 px-6 py-2 rounded-full uppercase tracking-wide bg-white border border-gray-300 text-gray-800 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition';
 
 const stepCard = 'border border-gray-200 rounded shadow-sm bg-white p-4';
 
@@ -223,14 +231,14 @@ export const ImportarBenfeitoriasModal: React.FC<Props> = ({ open, onClose, onIm
       <div className={stepCard}>
         <div className="flex items-start gap-3">
           <div
-            className="w-7 h-7 rounded-full flex items-center justify-center text-[12px] font-bold shrink-0 text-white"
-            style={{ backgroundColor: FD_PRIMARY }}
+            className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-white"
+            style={{ ...letraRotulo, fontWeight: 600, backgroundColor: FD_PRIMARY }}
           >
             1
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-[13px] font-semibold text-[#4ECDC4] mb-1">Baixe o modelo de planilha</p>
-            <p className="text-[11px] text-gray-500 mb-3 leading-relaxed">
+            <p className="text-[#4ECDC4] mb-1" style={letraSecao}>Baixe o modelo de planilha</p>
+            <p className="text-gray-500 mb-3 leading-relaxed" style={letraCorpo}>
               Modelo com colunas do cadastro, lista suspensa de fazendas e campos obrigatórios marcados com{' '}
               <strong>*</strong>.
             </p>
@@ -239,7 +247,7 @@ export const ImportarBenfeitoriasModal: React.FC<Props> = ({ open, onClose, onIm
               onClick={handleDownloadModelo}
               disabled={gerarModeloMutation.isPending}
               className={btnPrimary}
-              style={{ backgroundColor: FD_PRIMARY }}
+              style={{ ...btnLetra, backgroundColor: FD_PRIMARY }}
             >
               {gerarModeloMutation.isPending ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -255,14 +263,14 @@ export const ImportarBenfeitoriasModal: React.FC<Props> = ({ open, onClose, onIm
       <div className={stepCard}>
         <div className="flex items-start gap-3">
           <div
-            className="w-7 h-7 rounded-full flex items-center justify-center text-[12px] font-bold shrink-0 text-white"
-            style={{ backgroundColor: FD_PRIMARY }}
+            className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-white"
+            style={{ ...letraRotulo, fontWeight: 600, backgroundColor: FD_PRIMARY }}
           >
             2
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-[13px] font-semibold text-[#4ECDC4] mb-1">Preencha e envie a planilha</p>
-            <p className="text-[11px] text-gray-500 mb-3">
+            <p className="text-[#4ECDC4] mb-1" style={letraSecao}>Preencha e envie a planilha</p>
+            <p className="text-gray-500 mb-3" style={letraCorpo}>
               Formatos aceitos: <strong>XLSX</strong>, <strong>XLS</strong>, <strong>CSV</strong>
             </p>
 
@@ -286,8 +294,8 @@ export const ImportarBenfeitoriasModal: React.FC<Props> = ({ open, onClose, onIm
               {arquivo ? (
                 <div className="flex flex-col items-center gap-2">
                   <FileSpreadsheet className="w-10 h-10 text-emerald-600" />
-                  <p className="font-semibold text-gray-800 text-[13px]">{arquivo.name}</p>
-                  <p className="text-[11px] text-gray-500">{linhas.length} linha(s) detectada(s)</p>
+                  <p className="text-gray-800" style={{ ...letraCorpo, fontWeight: 600 }}>{arquivo.name}</p>
+                  <p className="text-gray-500" style={letraRotulo}>{linhas.length} linha(s) detectada(s)</p>
                   <button
                     type="button"
                     onClick={e => {
@@ -295,7 +303,8 @@ export const ImportarBenfeitoriasModal: React.FC<Props> = ({ open, onClose, onIm
                       setArquivo(null);
                       setLinhas([]);
                     }}
-                    className="text-[11px] text-gray-500 hover:text-red-500 underline mt-1"
+                    className="text-gray-500 hover:text-red-500 underline mt-1"
+                    style={letraRotulo}
                   >
                     Remover arquivo
                   </button>
@@ -303,11 +312,11 @@ export const ImportarBenfeitoriasModal: React.FC<Props> = ({ open, onClose, onIm
               ) : (
                 <div className="flex flex-col items-center gap-2">
                   <Upload className="w-10 h-10 text-gray-400" />
-                  <p className="text-[13px] text-gray-600">
+                  <p className="text-gray-600" style={letraCorpo}>
                     <span className="font-semibold text-[#4ECDC4]">Clique para selecionar</span> ou arraste o
                     arquivo aqui
                   </p>
-                  <p className="text-[11px] text-gray-400">XLSX, XLS ou CSV</p>
+                  <p className="text-gray-400" style={letraRotulo}>XLSX, XLS ou CSV</p>
                 </div>
               )}
             </div>
@@ -322,8 +331,8 @@ export const ImportarBenfeitoriasModal: React.FC<Props> = ({ open, onClose, onIm
         </div>
       </div>
 
-      <div className="flex flex-wrap justify-end gap-3 pt-1 border-t border-gray-100">
-        <button type="button" onClick={handleClose} className={btnSecondary}>
+      <div className="flex flex-wrap justify-end gap-3 pt-1">
+        <button type="button" onClick={handleClose} className={btnSecondary} style={btnLetra}>
           Cancelar
         </button>
         <button
@@ -331,7 +340,7 @@ export const ImportarBenfeitoriasModal: React.FC<Props> = ({ open, onClose, onIm
           onClick={handleValidar}
           disabled={linhas.length === 0 || validarMutation.isPending}
           className={btnPrimary}
-          style={{ backgroundColor: FD_PRIMARY }}
+          style={{ ...btnLetra, backgroundColor: FD_PRIMARY }}
         >
           {validarMutation.isPending ? (
             <Loader2 className="w-4 h-4 animate-spin" />
@@ -359,25 +368,25 @@ export const ImportarBenfeitoriasModal: React.FC<Props> = ({ open, onClose, onIm
       <div className="space-y-4">
         <div className="grid grid-cols-3 gap-3">
           <div className={metricCard}>
-            <p className="text-2xl font-bold text-gray-800 tabular-nums">{validacao.total}</p>
-            <p className="text-[11px] text-gray-500 mt-0.5">Total de registros</p>
+            <p className="text-gray-800 tabular-nums" style={letraNumero}>{validacao.total}</p>
+            <p className="text-gray-500 mt-0.5" style={letraRotulo}>Total de registros</p>
           </div>
           <div className={metricCard}>
-            <p className="text-2xl font-bold text-emerald-700 tabular-nums">{validacao.validos}</p>
-            <p className="text-[11px] text-gray-500 mt-0.5">Válidos</p>
+            <p className="text-emerald-700 tabular-nums" style={letraNumero}>{validacao.validos}</p>
+            <p className="text-gray-500 mt-0.5" style={letraRotulo}>Válidos</p>
           </div>
           <div className={metricCard}>
-            <p className={cn('text-2xl font-bold tabular-nums', temErros ? 'text-red-700' : 'text-emerald-700')}>
+            <p className={cn('tabular-nums', temErros ? 'text-red-700' : 'text-emerald-700')} style={letraNumero}>
               {validacao.invalidos}
             </p>
-            <p className="text-[11px] text-gray-500 mt-0.5">Com erro</p>
+            <p className="text-gray-500 mt-0.5" style={letraRotulo}>Com erro</p>
           </div>
         </div>
 
         {!temErros ? (
           <div className="flex items-center gap-2 border border-emerald-200 bg-emerald-50/60 rounded-lg p-3">
             <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-            <p className="text-[13px] text-emerald-900 font-medium">
+            <p className="text-emerald-900" style={{ ...letraCorpo, fontWeight: 500 }}>
               Todos os {validacao.total} registros estão válidos e prontos para importação!
             </p>
           </div>
@@ -385,10 +394,10 @@ export const ImportarBenfeitoriasModal: React.FC<Props> = ({ open, onClose, onIm
           <div className="flex items-start gap-2 border border-amber-200 bg-amber-50/60 rounded-lg p-3">
             <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
             <div>
-              <p className="text-[13px] text-amber-900 font-medium">
+              <p className="text-amber-900" style={{ ...letraCorpo, fontWeight: 500 }}>
                 {validacao.invalidos} registro(s) com erro serão ignorados.
               </p>
-              <p className="text-[11px] text-amber-800 mt-0.5">
+              <p className="text-amber-800 mt-0.5" style={letraRotulo}>
                 Apenas os {validacao.validos} registros válidos serão importados.
               </p>
             </div>
@@ -400,7 +409,8 @@ export const ImportarBenfeitoriasModal: React.FC<Props> = ({ open, onClose, onIm
             <button
               type="button"
               onClick={() => setMostrarErros(v => !v)}
-              className="flex items-center gap-1.5 text-[13px] font-semibold text-red-700 hover:text-red-900 transition-colors"
+              className="flex items-center gap-1.5 text-red-700 hover:text-red-900 transition-colors"
+              style={letraRotulo}
             >
               <XCircle className="w-4 h-4" />
               {mostrarErros ? 'Ocultar erros' : `Ver ${validacao.erros.length} erro(s) encontrado(s)`}
@@ -410,9 +420,9 @@ export const ImportarBenfeitoriasModal: React.FC<Props> = ({ open, onClose, onIm
               <div className="mt-3 max-h-52 overflow-y-auto border border-red-200 rounded-lg divide-y divide-red-100">
                 {linhasComErro.map(numLinha => (
                   <div key={numLinha} className="p-3 bg-red-50/80">
-                    <p className="text-[11px] font-bold text-red-800 mb-1">Linha {numLinha}</p>
+                    <p className="text-red-800 mb-1" style={{ ...letraRotulo, fontWeight: 600 }}>Linha {numLinha}</p>
                     {errosPorLinha[numLinha].map((e, idx) => (
-                      <p key={idx} className="text-[11px] text-red-700">
+                      <p key={idx} className="text-red-700" style={letraCorpo}>
                         • <span className="font-semibold">{e.campo}:</span> {e.mensagem}
                       </p>
                     ))}
@@ -423,7 +433,7 @@ export const ImportarBenfeitoriasModal: React.FC<Props> = ({ open, onClose, onIm
           </div>
         )}
 
-        <div className="flex flex-wrap justify-between gap-3 pt-1 border-t border-gray-100">
+        <div className="flex flex-wrap justify-between gap-3 pt-1">
           <button
             type="button"
             onClick={() => {
@@ -432,12 +442,13 @@ export const ImportarBenfeitoriasModal: React.FC<Props> = ({ open, onClose, onIm
               setMostrarErros(false);
             }}
             className={btnSecondary}
+            style={btnLetra}
           >
             <RotateCcw className="w-4 h-4" />
             Voltar
           </button>
           <div className="flex flex-wrap gap-3">
-            <button type="button" onClick={handleClose} className={btnSecondary}>
+            <button type="button" onClick={handleClose} className={btnSecondary} style={btnLetra}>
               Cancelar
             </button>
             {validacao.validos > 0 && (
@@ -446,7 +457,7 @@ export const ImportarBenfeitoriasModal: React.FC<Props> = ({ open, onClose, onIm
                 onClick={handleImportar}
                 disabled={importarMutation.isPending}
                 className={btnPrimary}
-                style={{ backgroundColor: FD_PRIMARY }}
+                style={{ ...btnLetra, backgroundColor: FD_PRIMARY }}
               >
                 {importarMutation.isPending ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -474,43 +485,41 @@ export const ImportarBenfeitoriasModal: React.FC<Props> = ({ open, onClose, onIm
           ) : (
             <AlertTriangle className="w-14 h-14 text-amber-500 mb-2" />
           )}
-          <h3
-            className="text-[18px] font-semibold text-gray-900"
-            style={{ fontFamily: 'Fraunces, serif' }}
-          >
+          <h3 className="text-gray-900 text-center" style={letraSecao}>
             {sucesso ? 'Importação concluída!' : 'Importação concluída com avisos'}
           </h3>
         </div>
 
         <div className="grid grid-cols-3 gap-3">
           <div className={metricCard}>
-            <p className="text-2xl font-bold text-gray-800 tabular-nums">{resultado.total}</p>
-            <p className="text-[11px] text-gray-500 mt-0.5">Processados</p>
+            <p className="text-gray-800 tabular-nums" style={letraNumero}>{resultado.total}</p>
+            <p className="text-gray-500 mt-0.5" style={letraRotulo}>Processados</p>
           </div>
           <div className={metricCard}>
-            <p className="text-2xl font-bold text-emerald-700 tabular-nums">{resultado.importados}</p>
-            <p className="text-[11px] text-gray-500 mt-0.5">Importados</p>
+            <p className="text-emerald-700 tabular-nums" style={letraNumero}>{resultado.importados}</p>
+            <p className="text-gray-500 mt-0.5" style={letraRotulo}>Importados</p>
           </div>
           <div className={metricCard}>
             <p
               className={cn(
-                'text-2xl font-bold tabular-nums',
+                'tabular-nums',
                 resultado.rejeitados > 0 ? 'text-red-700' : 'text-emerald-700',
               )}
+              style={letraNumero}
             >
               {resultado.rejeitados}
             </p>
-            <p className="text-[11px] text-gray-500 mt-0.5">Rejeitados</p>
+            <p className="text-gray-500 mt-0.5" style={letraRotulo}>Rejeitados</p>
           </div>
         </div>
 
         {resultado.detalhesRejeitados.length > 0 && (
           <div>
-            <p className="text-[13px] font-semibold text-red-700 mb-2">Registros rejeitados:</p>
+            <p className="text-red-700 mb-2" style={letraRotulo}>Registros rejeitados:</p>
             <div className="max-h-40 overflow-y-auto border border-red-200 rounded-lg divide-y divide-red-100">
               {resultado.detalhesRejeitados.map((r, i) => (
                 <div key={i} className="p-2.5 bg-red-50/80">
-                  <p className="text-[11px] text-red-700">
+                  <p className="text-red-700" style={letraCorpo}>
                     <span className="font-bold">Linha {r.linha}:</span> {r.mensagem}
                   </p>
                 </div>
@@ -519,7 +528,7 @@ export const ImportarBenfeitoriasModal: React.FC<Props> = ({ open, onClose, onIm
           </div>
         )}
 
-        <div className="flex flex-col sm:flex-row gap-3 pt-1 border-t border-gray-100">
+        <div className="flex flex-wrap gap-3 pt-1">
           <button
             type="button"
             onClick={() => {
@@ -530,7 +539,8 @@ export const ImportarBenfeitoriasModal: React.FC<Props> = ({ open, onClose, onIm
               setResultado(null);
               setMostrarErros(false);
             }}
-            className={cn(btnSecondary, 'flex-1')}
+            className={btnSecondary}
+            style={btnLetra}
           >
             <RotateCcw className="w-4 h-4" />
             Nova Importação
@@ -538,8 +548,8 @@ export const ImportarBenfeitoriasModal: React.FC<Props> = ({ open, onClose, onIm
           <button
             type="button"
             onClick={handleClose}
-            className={cn(btnPrimary, 'flex-1')}
-            style={{ backgroundColor: FD_PRIMARY }}
+            className={btnPrimary}
+            style={{ ...btnLetra, backgroundColor: FD_PRIMARY }}
           >
             <ListChecks className="w-4 h-4" />
             Ir para Lista de Benfeitorias
@@ -553,7 +563,7 @@ export const ImportarBenfeitoriasModal: React.FC<Props> = ({ open, onClose, onIm
 
   const titulos: Record<Etapa, { title: string; desc: string }> = {
     upload: {
-      title: 'Importar Benfeitorias em Massa',
+      title: 'Importar Benfeitorias',
       desc: 'Baixe o modelo com coluna Fazenda, preencha os dados e envie a planilha.',
     },
     validacao: {
@@ -579,13 +589,10 @@ export const ImportarBenfeitoriasModal: React.FC<Props> = ({ open, onClose, onIm
     <Dialog open={open} onOpenChange={v => { if (!v) handleClose(); }}>
       <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-hidden flex flex-col gap-0 p-0">
         <DialogHeader className="px-5 py-4 border-b border-gray-100 shrink-0 text-left space-y-1">
-          <DialogTitle
-            className="text-[20px] font-semibold text-gray-900"
-            style={{ fontFamily: 'Fraunces, serif' }}
-          >
+          <DialogTitle className="text-gray-900" style={letraTitulo}>
             {titulos[etapa].title}
           </DialogTitle>
-          <DialogDescription className="text-[11px] text-gray-500">
+          <DialogDescription className="text-gray-500" style={letraCorpo}>
             {titulos[etapa].desc}
           </DialogDescription>
         </DialogHeader>
@@ -597,26 +604,31 @@ export const ImportarBenfeitoriasModal: React.FC<Props> = ({ open, onClose, onIm
                 <div className="flex flex-col items-center">
                   <div
                     className={cn(
-                      'w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-colors',
+                      'w-7 h-7 rounded-full flex items-center justify-center transition-colors',
                       idx < etapaIdx
                         ? 'bg-emerald-500 text-white'
                         : idx === etapaIdx
                           ? 'text-white'
                           : 'bg-gray-200 text-gray-500',
                     )}
-                    style={idx === etapaIdx ? { backgroundColor: FD_PRIMARY } : undefined}
+                    style={{
+                      ...letraRotulo,
+                      fontWeight: 600,
+                      ...(idx === etapaIdx ? { backgroundColor: FD_PRIMARY } : {}),
+                    }}
                   >
                     {idx < etapaIdx ? <CheckCircle2 className="w-4 h-4" /> : idx + 1}
                   </div>
                   <span
                     className={cn(
-                      'text-[10px] mt-1 font-medium',
+                      'mt-1',
                       idx === etapaIdx
                         ? 'text-[#4ECDC4]'
                         : idx < etapaIdx
                           ? 'text-emerald-600'
                           : 'text-gray-400',
                     )}
+                    style={letraRotulo}
                   >
                     {e.label}
                   </span>
